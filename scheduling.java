@@ -83,6 +83,14 @@ abstract class Schedule{
     protected abstract void runSchedule();
     protected abstract void calculateMetrics();
 
+    public void printExecutionOrder() {
+        System.out.print("Execution Order: ");
+        for (String name : executionOrder) {
+            System.out.print(name + " ");
+        }
+        System.out.println();
+    }
+
     public void printProcessStats(){
         System.out.println("Name\tWaiting\tTurnaround");
         for(Process p : processes)
@@ -228,4 +236,35 @@ public int addArrivedProcesses(int nxtArrival, int curTime){
 
     @Override
     protected void calculateMetrics() {} // already calculated
+}
+
+public class scheduling {
+    public static void main(String[] args) {
+        // test 4
+        // BUILDING PROCESSES IN GENERAL
+        Scanner in = new Scanner(System.in);
+        int agingInterval = 6;
+        int contextSwitchTime = 2;
+        int rrQuantum = 5;
+
+        List<SJF_process> general_processes = new ArrayList<>();
+        int[] arrivals = {0,4,8,12,16,20};
+        int[] bursts = {12,9,15,6,11,5};
+        int[] priorities = {2,3,1,4,2,5};
+
+        for(int i = 0; i < agingInterval; i++){
+            String name = "P" + String.valueOf(i+1);
+            /*System.out.print("Process: "+ name);
+            System.out.print("\nArrival Time:\t");
+            System.out.print("\nBurst Time:\t");
+            System.out.print("\nPriority:\t");*/
+            general_processes.add(new Process(name, arrivals[i], bursts[i], priorities[i]));
+        }
+        in.close();
+
+        System.out.println("\n===========     1. SRJF    =========\n");
+        SJF_Schedule sjfSchedule = new SJF_Schedule(new ArrayList<>(general_processes), contextSwitchTime);
+
+
+    }
 }

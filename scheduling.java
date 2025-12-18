@@ -191,11 +191,6 @@ class SJF_Schedule extends Schedule {
         // sort according to arrival time for
         sjf_processes.sort(Comparator.comparingInt(SJF_process::get_arrival_time));
         while(completed < sjf_processes.size()) {
-            if (currTime % 5 == 0) {  // Print every 5 time units
-                System.out.println("Time: " + currTime + ", Completed: " + completed +
-                        ", ReadyQ size: " + readyQ.size());
-            }
-
             while(nextArrivalIdx < this.sjf_processes.size()
                     && this.sjf_processes.get(nextArrivalIdx).arrival_time <= currTime){
 
@@ -238,8 +233,6 @@ class SJF_Schedule extends Schedule {
 
                     // start a new process
                     readyQ.poll();
-                    if(current_process != null && current_process.get_RemainingTime() > 0)
-                        readyQ.add(current_process);
                     current_process = next_process;
                     if(!current_process.isStarted())
                         current_process.setStarted(true);
@@ -257,17 +250,13 @@ class SJF_Schedule extends Schedule {
 
             // handling idle CPU &(all tasks not completed yet)
             if(current_process == null && readyQ.isEmpty()
-                    && nextArrivalIdx < this.sjf_processes.size()){
-                int nextArrivalTime = sjf_processes.get(nextArrivalIdx).arrival_time;
-                if (nextArrivalTime > currTime) {
-                    System.out.println("Jumping from time " + currTime + " to " + nextArrivalTime);
-                    currTime = nextArrivalTime;  // SET, not ADD
-                }
-                //currTime += sjf_processes.get(nextArrivalIdx).arrival_time;
+                    && nextArrivalIdx < this.sjf_processes.size())
+                currTime = sjf_processes.get(nextArrivalIdx).get_arrival_time();
+
         }
 
         // UPDATE ORIGINAL PROCESSES WITH CALC METRICS
-        for(SJF_process p : sjf_processes){
+        for(Process p : processes){
             SJF_process sjf = processMap.get(p.get_name());
             if(sjf != null) {
                 p.waiting_time = sjf.waiting_time;

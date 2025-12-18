@@ -1,507 +1,522 @@
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
-import com.google.gson.Gson;
-
-class InputWrapper {
-    Input input;
-    ExpectedOutput expectedOutput;
-}
-
-class Input {
-    List<Proc> processes;
-    // Scheduling parameters
-    int contextSwitch;
-    int rrQuantum;
-    int agingInterval; 
-}
-
-class Proc {
-    String name;
-    int arrival;
-    int burst;
-    int priority;
-    int quantum;
-}
-
-class ExpectedOutput {
-    List<String> executionOrder;
-    List<ExpectedProcessResult> processResults;
-    double averageWaitingTime;
-    double averageTurnaroundTime;
-    // Results for other algorithms
-    ExpectedOutputRR SJF;
-    ExpectedOutputRR RR;
-    ExpectedOutputRR Priority;
-}
-
-class ExpectedProcessResult {
-    String name;
-    int waitingTime;
-    int turnaroundTime;
-    List<Integer> quantumHistory;
-}
-
-class ProcessOutcome {
-    String name;
-    int waitingTime;
-    int turnaroundTime;
-    List<Integer> quantumHistory;
-}
-
-class AgResult {
-    List<String> executionOrder;
-    List<ProcessOutcome> processResults;
-    double averageWaitingTime;
-    double averageTurnaroundTime;
-}
-
-class process {
-
+// ===============      GENERAL PART *FOR ALL* ===============
+class Process {
     protected String name;
     protected int arrival_time;
     protected int burst_time;
     protected int priority;
-    protected int time_in;
-    protected int time_out;
+    protected int time_in = -1;
+    protected int time_out = -1;
     protected int waiting_time;
     protected int turnaround_time;
-    protected int original_burst_time;
+    // Added original_burst to track progress accurately across all algorithms
+    protected int original_burst_time; 
 
-    public process(String name, int arrival_time, int burst_time, int priority) {
-
+    public Process(String name, int arrival_time, int burst_time, int priority) {
         this.name = name;
         this.arrival_time = arrival_time;
         this.burst_time = burst_time;
         this.original_burst_time = burst_time;
         this.priority = priority;
-        this.time_out = arrival_time;
+        this.time_out = 0;
+        this.waiting_time = 0;
+        this.turnaround_time = 0;
     }
 
-    public String get_name() {
-        return name;
-    }
+    // Getters & Setters
+    public String get_name() { return name; }
+    public int get_arrival_time() { return arrival_time; }
+    public int get_burst_time() { return burst_time; }
+    public int get_priority() { return priority; }
+    public int get_time_in() { return time_in; }
+    public int get_time_out() { return time_out; }
+    public int get_waiting_time() { return waiting_time; }
+    public int get_turnaround_time(){ return turnaround_time; }
 
-    public int get_arrival_time() {
-        return arrival_time;
-    }
-
-    public int get_burst_time() {
-        return burst_time;
-    }
-
-    public int get_original_burst_time() {
-        return original_burst_time;
-    }
-
-    public int get_priority() {
-        return priority;
-    }
-
-    public int get_time_in() {
-        return time_in;
-    }
-
-    public int get_time_out() {
-        return time_out;
-    }
-
-    public int get_waiting_time() {
-        return waiting_time;
-    }
-
-    public void sub_burst_time_by_one() {
-        this.burst_time -= 1;
-    }
-
-    public void set_time_in(int time_in) {
-        this.time_in = time_in;
-    }
-
-    public void set_time_out(int time_out) {
-        this.time_out = time_out;
-    }
-
-    public void set_turnaround_time() {
-        this.turnaround_time = this.time_out - this.arrival_time;
-    }
-
-    public void calc_waiting_time() {
-        this.waiting_time = this.turnaround_time - this.original_burst_time;
-    }
-
-}
-
-class ag_process extends process {
-
-    protected int quantum;
-    protected List<Integer> quantum_hist = new ArrayList<>();
-
-    public ag_process(String name, int arrival_time, int burst_time, int priority, int quantum) {
-
-        super(name, arrival_time, burst_time, priority);
-        this.quantum = quantum;
-    }
-
-    public int get_quantum() {
-
-        return quantum;
-    }
-
-    public List<Integer> get_qunatm_hist() {
-
-        return quantum_hist;
-
-    }
-
-    public Integer get_lastest_qunatm() {
-
-        return quantum_hist.get(quantum_hist.size() - 1);
-
-    }
-
-    public void set_quantum(int quantum) {
-
-        this.quantum = quantum;
-
-    }
-
-    public void add_to_qunatm_hist() {
-
-        quantum_hist.add(this.quantum);
-
+    public void set_time_in(int time_in) { this.time_in = time_in; }
+    public void set_time_out(int time_out) { this.time_out = time_out; }
+    
+    // Decrement burst time (helper for simulation)
+    public void reduce_burst(int amount) {
+        this.burst_time -= amount;
+        if(this.burst_time < 0) this.burst_time = 0;
     }
 }
 
-enum State {
+// SCHEDULE IN GENERAL
+abstract class Schedule {
+    protected List<Process> processes;
+    protected List<String> executionOrder;
+    protected int contextSwitchTime;
 
-    FCFS,
-    PRIORITY,
-    SJF
-
-}
-
-public class scheduling {
-
-    public InputWrapper loadTestCase(String path) throws IOException {
-        String json = Files.readString(Path.of(path));
-        return new Gson().fromJson(json, InputWrapper.class);
+    public Schedule(List<Process> processes, int contextSwitchTime) {
+        this.processes = processes;
+        this.contextSwitchTime = contextSwitchTime;
+        this.executionOrder = new ArrayList<>();
     }
 
-    public List<ag_process> toAgProcesses(List<Proc> procs) {
-        List<ag_process> list = new ArrayList<>();
-        for (Proc p : procs) {
-            list.add(new ag_process(p.name, p.arrival, p.burst, p.priority, p.quantum));
+    public final void execute() {
+        validateInput();
+        runSchedule();
+        calculateMetrics();
+    }
+
+    protected void validateInput() {
+        if(processes.isEmpty() || processes == null)
+            throw new IllegalArgumentException("No processes to schedule");
+    }
+
+    protected abstract void runSchedule();
+    
+    // Default metric calculation (can be overridden)
+    protected void calculateMetrics() {
+        for(Process p : processes) {
+            p.turnaround_time = p.time_out - p.arrival_time;
+            p.waiting_time = p.turnaround_time - p.original_burst_time;
         }
-        return list;
     }
 
-    public AgResult ag_schedule(List<ag_process> processes) {
+    public void printExecutionOrder() {
+        System.out.print("Execution Order: [ ");
+        for (String name : executionOrder) {
+            System.out.print(name + " ");
+        }
+        System.out.println("]");
+    }
 
-        List<ag_process> pending = new ArrayList<>(processes);
-        List<ag_process> arrived_processes = new ArrayList<>();
-        List<ag_process> finished_processes = new ArrayList<>();
-        List<String> execution_order = new ArrayList<>();
-        int current_time = 0;
-        State state = State.FCFS;
+    public void printProcessStats() {
+        System.out.println("Name\tWaiting\tTurnaround");
+        // Sort by name for cleaner output
+        processes.sort(Comparator.comparing(Process::get_name));
+        for(Process p : processes)
+            System.out.println(p.get_name()+"\t"+ p.get_waiting_time()+"\t"+ p.get_turnaround_time());
+    }
 
-        int time_executed = 0;
-        ag_process curr_p;
-        while (!pending.isEmpty() || !arrived_processes.isEmpty()) {
+    public void printAverages() {
+        double avgWaiting = processes.stream().mapToInt(Process::get_waiting_time).average().orElse(0.0);
+        double avgTurnaround = processes.stream().mapToInt(Process::get_turnaround_time).average().orElse(0.0);
+        System.out.printf("Average Waiting Time: %.2f\n", avgWaiting);
+        System.out.printf("Average Turnaround Time: %.2f\n", avgTurnaround);
+    }
+}
 
-            if (!pending.isEmpty()) {
+// ================== 1. SRJF (From hisscheduling) ==================
+class SJF_process extends Process {
+    protected int remainingTime;
+    protected boolean started = false;
 
-                for (int i = 0; i < pending.size(); i++) {
-                    ag_process p = pending.get(i);
-                    if (p.get_arrival_time() <= current_time) {
-                        arrived_processes.add(p);
-                        pending.remove(i);
-                        --i;
-                    }
+    public SJF_process(Process p) {
+        super(p.name, p.arrival_time, p.burst_time, p.priority);
+        this.remainingTime = p.burst_time;
+    }
 
-                }
+    public int get_RemainingTime() { return remainingTime; }
+    public boolean isStarted() { return started; }
+    public void setStarted(boolean started) { this.started = started; }
+    
+    public void executeOneUnit() { remainingTime--; }
+}
 
+class SJF_Schedule extends Schedule {
+    private List<SJF_process> sjf_processes;
+    private PriorityQueue<SJF_process> readyQ;
+
+    public SJF_Schedule(List<Process> processes, int contextSwitchTime) {
+        super(processes, contextSwitchTime);
+        this.sjf_processes = new ArrayList<>();
+        // Convert generic processes to SJF processes
+        for(Process p : processes) sjf_processes.add(new SJF_process(p));
+        
+        this.readyQ = new PriorityQueue<>(
+                Comparator.comparing(SJF_process::get_RemainingTime)
+                        .thenComparingInt(Process::get_arrival_time));
+    }
+
+    @Override
+    protected void runSchedule() {
+        int currTime = 0, completed = 0;
+        SJF_process current_process = null;
+        
+        // Use a copy list to manage arrivals
+        List<SJF_process> incoming = new ArrayList<>(sjf_processes);
+        incoming.sort(Comparator.comparingInt(Process::get_arrival_time));
+
+        while(completed < sjf_processes.size()) {
+            // Add arrivals
+            while(!incoming.isEmpty() && incoming.get(0).arrival_time <= currTime){
+                readyQ.add(incoming.remove(0));
             }
 
-            if (!arrived_processes.isEmpty()) {
+            // Check if current process is done
+            if(current_process != null && current_process.get_RemainingTime() == 0){
+                completed++;
+                current_process.set_time_out(currTime);
+                current_process = null;
+            }
 
+            // Context switch / Preemption logic
+            if(!readyQ.isEmpty()){
+                SJF_process next = readyQ.peek();
+                if(current_process == null || next.get_RemainingTime() < current_process.get_RemainingTime()){
+                    // Context Switch penalty would go here
+                    if(current_process != null && current_process.get_RemainingTime() > 0) {
+                        readyQ.add(current_process);
+                    }
+                    current_process = readyQ.poll();
+                    executionOrder.add(current_process.get_name());
+                }
+            }
+
+            if(current_process != null) {
+                current_process.executeOneUnit();
+                currTime++;
+            } else {
+                // Time skip if idle
+                if(!incoming.isEmpty()) currTime = incoming.get(0).arrival_time;
+                else currTime++;
+            }
+        }
+
+        // Map results back to original list for reporting
+        for(int i=0; i<processes.size(); i++) {
+            Process orig = processes.get(i);
+            // Find matching SJF process (simplified by assuming order/name match)
+            for(SJF_process sjf : sjf_processes) {
+                if(sjf.name.equals(orig.name)) {
+                    orig.time_out = sjf.time_out;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// ================== 2. ROUND ROBIN (Adapted from Myscheduling) ==================
+class RR_Schedule extends Schedule {
+    private int quantum;
+
+    public RR_Schedule(List<Process> processes, int contextSwitchTime, int quantum) {
+        super(deepCopy(processes), contextSwitchTime); // Work on copy to not ruin original data
+        this.quantum = quantum;
+    }
+
+    // Helper to deep copy list so we can modify burst times safely
+    private static List<Process> deepCopy(List<Process> list) {
+        List<Process> copy = new ArrayList<>();
+        for(Process p : list) copy.add(new Process(p.name, p.arrival_time, p.burst_time, p.priority));
+        return copy;
+    }
+
+    @Override
+    protected void runSchedule() {
+        Queue<Process> readyQueue = new LinkedList<>();
+        List<Process> pending = new ArrayList<>(processes);
+        pending.sort(Comparator.comparingInt(Process::get_arrival_time));
+        
+        int currentTime = 0;
+        Process lastProcess = null;
+        int completed = 0;
+
+        while(completed < processes.size()) {
+            // Add newly arrived processes
+            while(!pending.isEmpty() && pending.get(0).arrival_time <= currentTime) {
+                readyQueue.add(pending.remove(0));
+            }
+
+            if(readyQueue.isEmpty()) {
+                if(!pending.isEmpty()) currentTime = pending.get(0).arrival_time;
+                else currentTime++;
+                continue;
+            }
+
+            Process p = readyQueue.poll();
+
+            // Handle Context Switch
+            if(lastProcess != null && lastProcess != p && contextSwitchTime > 0) {
+                currentTime += contextSwitchTime;
+                // Check arrivals during CS
+                while(!pending.isEmpty() && pending.get(0).arrival_time <= currentTime) {
+                    readyQueue.add(pending.remove(0));
+                }
+            }
+
+            // Execute
+            executionOrder.add(p.name);
+            int timeSlice = Math.min(quantum, p.burst_time);
+            currentTime += timeSlice;
+            p.reduce_burst(timeSlice);
+            lastProcess = p;
+
+            // Check arrivals during execution
+            while(!pending.isEmpty() && pending.get(0).arrival_time <= currentTime) {
+                readyQueue.add(pending.remove(0));
+            }
+
+            if(p.burst_time > 0) {
+                readyQueue.add(p);
+            } else {
+                p.set_time_out(currentTime);
+                completed++;
+            }
+        }
+    }
+}
+
+// ================== 3. AG SCHEDULING (Adapted from Myscheduling) ==================
+
+// Specialized Process for AG
+class AG_Process extends Process {
+    int quantum;
+    List<Integer> quantum_history = new ArrayList<>();
+
+    public AG_Process(Process p, int initQuantum) {
+        super(p.name, p.arrival_time, p.burst_time, p.priority);
+        this.quantum = initQuantum;
+        this.quantum_history.add(initQuantum);
+    }
+}
+class AG_Schedule extends Schedule {
+    private List<AG_Process> ag_processes;
+    private int initQuantum;
+
+    public AG_Schedule(List<Process> processes, int initQuantum) {
+        super(processes, 0); // Context switch is usually 0 for AG
+        this.initQuantum = initQuantum;
+        this.ag_processes = new ArrayList<>();
+        // Convert to AG Processes
+        for(Process p : processes) {
+            ag_processes.add(new AG_Process(p, initQuantum));
+        }
+    }
+
+    enum State { FCFS, PRIORITY, SJF }
+
+    @Override
+    protected void runSchedule() {
+        List<AG_Process> pending = new ArrayList<>(ag_processes);
+        List<AG_Process> readyQueue = new ArrayList<>(); 
+        List<AG_Process> finished = new ArrayList<>();
+        
+        int currentTime = 0;
+        State state = State.FCFS;
+        int time_executed = 0;
+        AG_Process curr_p = null;
+
+        // Sort pending by arrival initially to match your logic
+        pending.sort(Comparator.comparingInt(Process::get_arrival_time));
+
+        while (!pending.isEmpty() || !readyQueue.isEmpty()) {
+            
+            // 1. Check Arrivals (Exact match to your logic: only check at start of loop)
+            for (int i = 0; i < pending.size(); i++) {
+                if (pending.get(i).get_arrival_time() <= currentTime) {
+                    readyQueue.add(pending.get(i));
+                    pending.remove(i);
+                    i--; // adjust index after removal
+                }
+            }
+
+            if (!readyQueue.isEmpty()) {
+                // === STATE: FCFS ===
                 if (state == State.FCFS) {
-                    curr_p = arrived_processes.get(0);
-                    int cycle_period = current_time + (int) Math.ceil(curr_p.get_quantum() * 0.25);
-                    curr_p.set_time_in(current_time);
-                    execution_order.add(curr_p.get_name());
-                    curr_p.add_to_qunatm_hist();
+                    curr_p = readyQueue.get(0); 
+                    
+                    // Run for 25% of Quantum
+                    int cycle_limit = currentTime + (int) Math.ceil(curr_p.quantum * 0.25);
+                    executionOrder.add(curr_p.name);
+                    curr_p.quantum_history.add(curr_p.quantum); // Log history
                     time_executed = 0;
-                    while (current_time < cycle_period && curr_p.get_burst_time() > 0) {
-                        current_time += 1;
-                        time_executed += 1;
-                        curr_p.sub_burst_time_by_one();
 
+                    // Execute without checking arrivals (matching your original inner loop)
+                    while (currentTime < cycle_limit && curr_p.burst_time > 0) {
+                        currentTime++;
+                        time_executed++;
+                        curr_p.reduce_burst(1);
                     }
 
-                    if (curr_p.get_burst_time() == 0) {
-                        curr_p.set_time_out(current_time);
-                        curr_p.set_quantum(0);
-                        curr_p.add_to_qunatm_hist();
-                        curr_p.set_turnaround_time();
-                        arrived_processes.remove(0);
-                        finished_processes.add(curr_p);
-
-                    } else if (current_time == cycle_period) {
-
-                        state = State.PRIORITY;
+                    if (curr_p.burst_time == 0) {
+                        handleFinish(curr_p, currentTime, readyQueue, finished);
+                        state = State.FCFS; 
+                    } else {
+                        state = State.PRIORITY; // Move to next state
                     }
 
+                // === STATE: PRIORITY ===
                 } else if (state == State.PRIORITY) {
+                    curr_p = readyQueue.get(0);
+                    AG_Process best_p = getBestPriority(readyQueue);
+                    
+                    if (best_p != curr_p) {
+                        // PREEMPTION CASE (Specific AG Rule: Add ceil(remaining / 2))
+                        curr_p.time_out = currentTime; // update generic stat
+                        int addedQuantum = (int) Math.ceil((curr_p.quantum - time_executed) / 2.0);
+                        curr_p.quantum += addedQuantum;
+                        
+                        // Reorder queue: Move best to front, keep current (but preempted)
+                        // Note: Your original code removed both and re-added them in order
+                        readyQueue.remove(curr_p); 
+                        readyQueue.remove(best_p);
+                        readyQueue.add(0, best_p); 
+                        readyQueue.add(curr_p); 
 
-                    curr_p = arrived_processes.get(0);
-                    ag_process highest_pri_p = arrived_processes.get(0);
-
-                    for (ag_process p : arrived_processes) {
-                        if (p.get_priority() < highest_pri_p.get_priority()) {
-                            highest_pri_p = p;
+                        state = State.FCFS; // Reset cycle
+                        time_executed = 0;  // Reset execution counter
+                    } else {
+                        // Continue current process until 50%
+                        int cycle_limit = currentTime + (int) Math.ceil(curr_p.quantum * 0.25); // Run another 25%
+                        executionOrder.add(curr_p.name);
+                        
+                        while (currentTime < cycle_limit && curr_p.burst_time > 0) {
+                            currentTime++;
+                            time_executed++;
+                            curr_p.reduce_burst(1);
                         }
-                    }
-                    if (curr_p != highest_pri_p) {
-                        state = State.FCFS;
-                        curr_p.set_time_out(current_time);
-                        int latest_qunatum = curr_p.get_lastest_qunatm();
-                        Integer add_to_qunatum = (int) Math.ceil((curr_p.get_quantum() - time_executed) / 2.0);
-                        curr_p.set_quantum(latest_qunatum + add_to_qunatum);
-                        arrived_processes.remove(0);
-                        arrived_processes.remove(highest_pri_p);
-                        arrived_processes.add(0, highest_pri_p);
-                        arrived_processes.add(curr_p);
-                        time_executed = 0;
-                    } else if (curr_p == highest_pri_p) {
 
-                        curr_p = arrived_processes.get(0);
-                        int cycle_period = current_time + (int) Math.ceil(curr_p.get_quantum() * 0.25);
-                        execution_order.add(curr_p.get_name());
-                        while (current_time < cycle_period && curr_p.get_burst_time() > 0) {
-                            current_time += 1;
-                            time_executed += 1;
-                            curr_p.sub_burst_time_by_one();
-                        }
-                        if (curr_p.get_burst_time() == 0) {
-                            curr_p.set_time_out(current_time);
-                            curr_p.set_quantum(0);
-                            curr_p.add_to_qunatm_hist();
-                            curr_p.set_turnaround_time();
-                            arrived_processes.remove(0);
-                            finished_processes.add(curr_p);
+                        if (curr_p.burst_time == 0) {
+                            handleFinish(curr_p, currentTime, readyQueue, finished);
                             state = State.FCFS;
-
-                        } else if (current_time == cycle_period) {
-
+                        } else {
                             state = State.SJF;
                         }
                     }
 
+                // === STATE: SJF ===
                 } else if (state == State.SJF) {
+                    curr_p = readyQueue.get(0);
+                    AG_Process best_p = getShortestJob(readyQueue);
 
-                    curr_p = arrived_processes.get(0);
-                    ag_process shortest_j_p = arrived_processes.get(0);
+                    if (best_p != curr_p) {
+                        // PREEMPTION CASE (Specific AG Rule: Add remaining quantum)
+                        curr_p.time_out = currentTime;
+                        int addedQuantum = curr_p.quantum - time_executed;
+                        curr_p.quantum += addedQuantum;
 
-                    for (ag_process p : arrived_processes) {
-                        if (p.get_burst_time() < shortest_j_p.get_burst_time()) {
-
-                            shortest_j_p = p;
-
-                        }
-                    }
-                    if (curr_p != shortest_j_p) {
+                        readyQueue.remove(curr_p);
+                        readyQueue.remove(best_p);
+                        readyQueue.add(0, best_p);
+                        readyQueue.add(curr_p);
+                        
                         state = State.FCFS;
-                        curr_p.set_time_out(current_time);
-                        int latest_qunatum = curr_p.get_lastest_qunatm();
-                        Integer add_to_qunatum = (int) Math.ceil(curr_p.get_quantum() - time_executed);
-                        curr_p.set_quantum(latest_qunatum + add_to_qunatum);
-                        arrived_processes.remove(0);
-                        arrived_processes.remove(shortest_j_p);
-                        arrived_processes.add(0, shortest_j_p);
-                        arrived_processes.add(curr_p);
-
-                    } else if (curr_p == shortest_j_p) {
-
-                        curr_p = arrived_processes.get(0);
-                        int cycle_period = current_time + (curr_p.get_quantum() - time_executed);
-                        execution_order.add(curr_p.get_name());
-                        current_time += 1;
-                        time_executed += 1;
-                        curr_p.sub_burst_time_by_one();
-
-                        if (curr_p.get_burst_time() == 0) {
-                            curr_p.set_time_out(current_time);
-                            curr_p.set_quantum(0);
-                            curr_p.add_to_qunatm_hist();
-                            curr_p.set_turnaround_time();
-                            arrived_processes.remove(0);
-                            finished_processes.add(curr_p);
-                            state = State.FCFS;
-
-                        } else if (current_time == cycle_period) {
-
-                            state = State.FCFS;
-                            curr_p.set_time_out(current_time);
-                            int latest_qunatum = curr_p.get_lastest_qunatm();
-                            Integer add_to_qunatum = 2;
-                            curr_p.set_quantum(latest_qunatum + add_to_qunatum);
-                            arrived_processes.remove(0);
-                            arrived_processes.add(curr_p);
+                    } else {
+                        // Run rest of quantum
+                        int quantum_end_time = currentTime + (curr_p.quantum - time_executed);
+                        executionOrder.add(curr_p.name);
+                        
+                        // Execute unit-by-unit to catch quantum exhaustion exactly
+                        // Note: Your original code ran "while current < cycle_period" here too
+                        while (currentTime < quantum_end_time && curr_p.burst_time > 0) {
+                            currentTime++;
+                            time_executed++;
+                            curr_p.reduce_burst(1);
                         }
 
+                        if (curr_p.burst_time == 0) {
+                            handleFinish(curr_p, currentTime, readyQueue, finished);
+                            state = State.FCFS;
+                        } else {
+                            // Quantum Exhausted
+                            state = State.FCFS;
+                            curr_p.time_out = currentTime;
+                            curr_p.quantum += 2; // Rule: Add 2
+                            // Move to back
+                            readyQueue.remove(0);
+                            readyQueue.add(curr_p);
+                        }
                     }
-
                 }
             } else {
-
-                current_time += 1;
-            }
-        }
-
-        for (ag_process p : finished_processes) {
-            p.calc_waiting_time();
-        }
-
-        AgResult result = new AgResult();
-        result.executionOrder = execution_order;
-        result.processResults = new ArrayList<>();
-        double waitingSum = 0;
-        double turnaroundSum = 0;
-        for (ag_process p : finished_processes) {
-            ProcessOutcome o = new ProcessOutcome();
-            o.name = p.get_name();
-            o.waitingTime = p.get_waiting_time();
-            o.turnaroundTime = p.turnaround_time;
-            o.quantumHistory = new ArrayList<>(p.get_qunatm_hist());
-            result.processResults.add(o);
-            waitingSum += o.waitingTime;
-            turnaroundSum += o.turnaroundTime;
-        }
-        int n = finished_processes.size();
-        result.averageWaitingTime = n == 0 ? 0 : waitingSum / n;
-        result.averageTurnaroundTime = n == 0 ? 0 : turnaroundSum / n;
-        return result;
-
-    }
-
-    public RRResult roundRobinSchedule(
-            List<process> processes,
-            int quantum,
-            int contextSwitch) {
-        List<process> pending = new ArrayList<>(processes);
-        List<process> readyQueue = new ArrayList<>();
-        List<process> finished = new ArrayList<>();
-        List<String> executionOrder = new ArrayList<>();
-
-        int currentTime = 0;
-        process lastProcess = null;
-
-        while (!pending.isEmpty() || !readyQueue.isEmpty()) {
-
-            // move arrived processes
-            for (int i = 0; i < pending.size(); i++) {
-                if (pending.get(i).arrival_time <= currentTime) {
-                    readyQueue.add(pending.get(i));
-                    pending.remove(i);
-                    i--;
-                }
-            }
-
-            if (readyQueue.isEmpty()) {
+                // Idle CPU
                 currentTime++;
-                continue;
             }
+        }
 
-            process p = readyQueue.remove(0);
-
-            // context switch
-            if (lastProcess != null && lastProcess != p) {
-                currentTime += contextSwitch;
-            }
-
-            executionOrder.add(p.get_name());
-            p.set_time_in(currentTime);
-
-            int execTime = Math.min(quantum, p.get_burst_time());
-
-            currentTime += execTime;
-            p.burst_time -= execTime;
-
-            // check arrivals during execution
-            for (int i = 0; i < pending.size(); i++) {
-                if (pending.get(i).arrival_time <= currentTime) {
-                    readyQueue.add(pending.get(i));
-                    pending.remove(i);
-                    i--;
+        // Map final stats back to original process objects
+        for(Process orig : processes) {
+            for(AG_Process ag : finished) {
+                if(orig.name.equals(ag.name)) {
+                    orig.time_out = ag.time_out;
                 }
             }
-
-            if (p.get_burst_time() > 0) {
-                readyQueue.add(p);
-            } else {
-                p.set_time_out(currentTime);
-                p.set_turnaround_time();
-                finished.add(p);
-            }
-
-            lastProcess = p;
         }
-
-        double waitSum = 0, tatSum = 0;
-        List<ProcessOutcome> results = new ArrayList<>();
-
-        for (process p : finished) {
-            p.calc_waiting_time();
-            ProcessOutcome o = new ProcessOutcome();
-            o.name = p.get_name();
-            o.waitingTime = p.get_waiting_time();
-            o.turnaroundTime = p.turnaround_time;
-            results.add(o);
-
-            waitSum += o.waitingTime;
-            tatSum += o.turnaroundTime;
-        }
-
-        RRResult result = new RRResult();
-        result.executionOrder = executionOrder;
-        result.processResults = results;
-        result.averageWaitingTime = Math.round((waitSum / finished.size()) * 100.0) / 100.0;
-        result.averageTurnaroundTime = Math.round((tatSum / finished.size()) * 100.0) / 100.0;
-
-        return result;
     }
-    public static void main(String[] args) throws Exception {
-        if (args.length == 0) {
-            System.err.println("Pass path to AG_test*.json");
-            return;
+
+    // Helper to finalize a process
+    private void handleFinish(AG_Process p, int time, List<AG_Process> ready, List<AG_Process> finished) {
+        p.time_out = time;
+        p.quantum = 0;
+        p.quantum_history.add(0);
+        p.turnaround_time = p.time_out - p.arrival_time;
+        // recalculate wait time based on your formula
+        p.waiting_time = p.turnaround_time - p.original_burst_time; 
+        ready.remove(p);
+        finished.add(p);
+    }
+
+    private AG_Process getBestPriority(List<AG_Process> ready) {
+        AG_Process best = ready.get(0);
+        for(AG_Process p : ready) {
+            if(p.priority < best.priority) best = p;
         }
-        scheduling s = new scheduling();
-        InputWrapper data = s.loadTestCase(args[0]);
-        List<ag_process> items = s.toAgProcesses(data.input.processes);
-        AgResult result = s.ag_schedule(items);
-        System.out.println("Execution order: " + result.executionOrder);
-        for (ProcessOutcome o : result.processResults) {
-            System.out.println(o.name + " wait=" + o.waitingTime + " tat=" + o.turnaroundTime + " q=" + o.quantumHistory);
+        return best;
+    }
+
+    private AG_Process getShortestJob(List<AG_Process> ready) {
+        AG_Process best = ready.get(0);
+        for(AG_Process p : ready) {
+            if(p.burst_time < best.burst_time) best = p;
         }
-        System.out.println("avg wait=" + result.averageWaitingTime + " avg tat=" + result.averageTurnaroundTime);
+        return best;
     }
 }
 
-    // Round Robin Scheduler
-    class RRResult {
-        List<String> executionOrder;
-        List<ProcessOutcome> processResults;
-        double averageWaitingTime;
-        double averageTurnaroundTime;
+// ================== MAINF CLASS ==================
+public class scheduling {
+    public static void main(String[] args) {
+        // Setup inputs
+        int rrQuantum = 4;
+        int agQuantum = 4;
+        int contextSwitch = 0; // Set to 0 for standard AG
+
+        List<Process> procs = new ArrayList<>();
+        // Name, Arrival, Burst, Priority
+        procs.add(new Process("P1", 0, 17, 4));
+        procs.add(new Process("P2", 3, 6, 9));
+        procs.add(new Process("P3", 4, 10, 3));
+        procs.add(new Process("P4", 29, 4, 8));
+
+        // 1. SJF
+        System.out.println("\n=========== 1. SRJF (Shortest Remaining Job First) =========");
+        // Pass a COPY of list because scheduling modifies internal states
+        Schedule sjf = new SJF_Schedule(copyList(procs), contextSwitch);
+        sjf.execute();
+        sjf.printExecutionOrder();
+        sjf.printProcessStats();
+        sjf.printAverages();
+
+        // 2. Round Robin
+        System.out.println("\n=========== 2. Round Robin =========");
+        Schedule rr = new RR_Schedule(copyList(procs), contextSwitch, rrQuantum);
+        rr.execute();
+        rr.printExecutionOrder();
+        rr.printProcessStats();
+        rr.printAverages();
+
+        // 3. AG Scheduling
+        System.out.println("\n=========== 3. AG Scheduling =========");
+        Schedule ag = new AG_Schedule(copyList(procs), agQuantum);
+        ag.execute();
+        ag.printExecutionOrder();
+        ag.printProcessStats();
+        ag.printAverages();
     }
-    
-    class ExpectedOutputRR {
-    List<String> executionOrder;
-    List<ExpectedProcessResult> processResults;
-    double averageWaitingTime;
-    double averageTurnaroundTime;
+
+    // Helper to refresh data for each run
+    public static List<Process> copyList(List<Process> original) {
+        List<Process> copy = new ArrayList<>();
+        for(Process p : original) {
+            copy.add(new Process(p.name, p.arrival_time, p.burst_time, p.priority));
+        }
+        return copy;
+    }
 }

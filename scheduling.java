@@ -531,6 +531,165 @@ class AG_Schedule extends Schedule {
     }
 }
 
+// ============================================== PREEMPTIVE PRIORITY WITH AGING ============================================ //
+
+class PriorityProcess extends Process {
+    int remainingTime;
+    int originalPriority;
+    int waitingSince;   // time when process entered ready queue
+    int ageCount;
+
+    PriorityProcess(String name, int arrival, int burst, int priority) {
+        super(name, arrival, burst, priority);
+        this.remainingTime = burst;
+        this.originalPriority = priority;
+        this.waitingSince = arrival;
+        this.ageCount = 0;
+    }
+
+    void age(int currentTime) {
+        if (priority > 1) {
+            priority--;
+            ageCount++;
+        }
+        waitingSince = currentTime;
+    }
+}
+
+class PriorityWithAgingSchedule extends Schedule {
+
+    private List<PriorityProcess> all;
+    private List<PriorityProcess> finished;
+    private PriorityQueue<PriorityProcess> readyQueue;
+    private PriorityProcess running;
+    private int time;
+    private int arrivalIndex;
+    private int agingInterval;
+
+    PriorityWithAgingSchedule(List<Process> processes, int contextSwitch, int agingInterval) {
+        super(processes, contextSwitch);
+        this.agingInterval = agingInterval;
+        this.time = 0;
+        this.arrivalIndex = 0;
+        this.finished = new ArrayList<>();
+
+        all = new ArrayList<>();
+        for (Process p : processes) {
+            all.add(new PriorityProcess(
+                    p.get_name(),
+                    p.get_arrival_time(),
+                    p.get_burst_time(),
+                    p.get_priority()));
+        }
+
+        all.sort(Comparator.comparingInt(Process::get_arrival_time));
+
+        readyQueue = new PriorityQueue<>(
+                Comparator.comparingInt(Process::get_priority)
+                        .thenComparingInt(Process::get_arrival_time));
+    }
+
+    private void applyAging() {
+        if (readyQueue.isEmpty()) return;
+
+        List<PriorityProcess> temp = new ArrayList<>();
+        while (!readyQueue.isEmpty()) {
+            PriorityProcess p = readyQueue.poll();
+            if (time - p.waitingSince >= agingInterval) {
+                p.age(time);
+            }
+            temp.add(p);
+        }
+        readyQueue.addAll(temp);
+    }
+
+    private void handleContextSwitch() {
+        for (int i = 0; i < contextSwitchTime; i++) {
+            time++;
+
+            // لو حاجه معاد وصولها في الوقت ده
+            while (arrivalIndex < all.size() && all.get(arrivalIndex).get_arrival_time() <= time) {
+                PriorityProcess p = all.get(arrivalIndex++);
+                p.waitingSince = time;
+                readyQueue.add(p);
+            }
+
+            applyAging();
+        }
+    }
+
+    @Override
+    protected void calculateMetrics() {}
+
+    private void updateOriginalProcesses() {
+        for (Process p : processes) {
+            for (PriorityProcess done : finished) {
+                if (p.get_name().equals(done.get_name())) {
+                    p.waiting_time = done.waiting_time;
+                    p.turnaround_time = done.turnaround_time;
+                    p.time_out = done.time_out;
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void runSchedule() {
+        while (finished.size() < all.size()) {
+
+            //arrivals: checks for any newly arriving processes
+            //-->in other words, processes that should arrive now or have arrived and are not yet taken
+            while (arrivalIndex < all.size() && all.get(arrivalIndex).get_arrival_time() <= time) {
+                PriorityProcess p = all.get(arrivalIndex++);
+                p.waitingSince = time;
+                readyQueue.add(p);
+            }
+
+            //aging
+            applyAging();
+
+            //preemption
+            if (running != null && !readyQueue.isEmpty()) {
+                PriorityProcess top = readyQueue.peek();
+                if (top.get_priority() < running.get_priority()) {
+                    running.waitingSince = time;
+                    readyQueue.add(running);
+                    running = null;
+                    handleContextSwitch();
+                }
+            }
+
+            //dispatch
+            if (running == null && !readyQueue.isEmpty()) {
+                running = readyQueue.poll();
+                if (executionOrder.isEmpty() || !executionOrder.get(executionOrder.size() - 1)
+                        .equals(running.get_name())) {
+                    executionOrder.add(running.get_name());
+                }
+            }
+
+            //execute
+            if (running != null) {
+                running.remainingTime--;
+                if (running.remainingTime == 0) {
+                    running.time_out = time + 1;
+                    running.turnaround_time = running.time_out - running.arrival_time;
+                    running.waiting_time = running.turnaround_time - running.burst_time;
+                    finished.add(running);
+                    running = null;
+                    handleContextSwitch();
+                }
+            }
+
+            time++;
+        }
+
+        updateOriginalProcesses();
+    }
+
+}
+
+
 // ================== MAINF CLASS ==================
 public class scheduling {
     public static void main(String[] args) {

@@ -105,19 +105,23 @@ class SJF_process extends process {
     protected boolean started = false;
     protected static int contextSwitchTime = 0;
 
+    protected List<SJF_process> processes = new ArrayList<>();
+
     public SJF_process(String name, int arrival_time, int burst_time) {
         super(name, arrival_time, burst_time, 0); // ignore the priority -> make it 0
         this.remainingTime = burst_time;
         this.turnaroundTime = 0;
     }
-
+// SETTERS & GETTERS
     public int get_RemainingTime() {return remainingTime;}
     public int get_turnaroundTime() {return turnaroundTime;}
     public void setStarted(boolean started) {this.started = started;}
     public boolean isStarted() {return started;}
     public void setContextSwitchTime(int contextSwitchTime) {this.contextSwitchTime = contextSwitchTime;}
     public int getContextSwitchTime() {return contextSwitchTime;}
+    public void addProcess(SJF_process p){processes.add(p);}
 
+// MAIN METHODS
 
     public double AvgWaitingTime() {
         return  0; // tmp

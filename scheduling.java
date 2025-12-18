@@ -118,6 +118,7 @@ class SJF_process extends Process {
         this.remainingTime = burst_time;
         this.started = false;
     }
+
 // SETTERS & GETTERS
     public int get_RemainingTime() {return remainingTime;}
     public boolean isStarted() {return started;}
@@ -148,10 +149,81 @@ class SJF_Schedule extends Schedule {
                         .thenComparingInt(SJF_process::get_arrival_time)
         );
     }
+// HELPERS
+public int addArrivedProcesses(int nxtArrival, int curTime){
+        while(nxtArrival < this.sjf_processes.size()
+        && this.sjf_processes.get(nxtArrival).arrival_time <= curTime){
+            SJF_process arriving = this.sjf_processes.get(nxtArrival);
+            this.readyQ.add(arriving);
+            ++nxtArrival;
+        }
+        return nxtArrival;
+}
 
+// MAIN FNC
     @Override
     protected void runSchedule() {
-        // next step
+        int currTime = 0,
+            completed = 0,
+            nextArrivalIdx= 0;
+        SJF_process current_process = null;
+
+        // sort according to arrival time for
+        sjf_processes.sort(Comparator.comparingInt(SJF_process::get_arrival_time));
+        while(completed < sjf_processes.size()) {
+            nextArrivalIdx = addArrivedProcesses(nextArrivalIdx, currTime);
+            // in case the current process has been finished
+            if(current_process != null && current_process.get_RemainingTime() == 0){
+                ++completed;
+                current_process = null;
+            }
+
+            // decide which process to run
+            if(!this.readyQ.isEmpty()){
+                SJF_process next_process = this.readyQ.peek();
+
+                if(current_process ==null
+                    || (current_process.get_RemainingTime() > next_process.get_RemainingTime()
+                        && next_process.get_arrival_time() <= currTime)
+                ){
+                    // handle context of switch (if only switching process)
+                    if(current_process != null && current_process.get_RemainingTime() > 0){
+                        readyQ.add(current_process);
+
+                        if(this.contextSwitchTime > 0){
+                            executionOrder.add("[CS]");
+                            currTime += this.contextSwitchTime;
+                        }
+                    }
+
+                    // start a new process
+                    readyQ.poll();
+                    if(current_process != null && current_process.get_RemainingTime() > 0)
+                        readyQ.add(current_process);
+                    current_process = next_process;
+                    if(!current_process.isStarted())
+                        current_process.setStarted(true);
+                    executionOrder.add(current_process.get_name());
+                }
+            }
+
+            // exec curr process for a 1 time unit
+            if(current_process !=null)
+                current_process.executeOneUnit(currTime);
+            ++currTime;
+
+            // handling idle CPU &(all tasks not completed yet)
+            if(current_process == null && readyQ.isEmpty()
+                    && nextArrivalIdx < this.sjf_processes.size())
+                currTime += sjf_processes.get(nextArrivalIdx).get_arrival_time();
+        }
+
+        // UPDATE ORIGINAL PROCESSES WITH CALC METRICS
+        for(SJF_process p : sjf_processes){
+            p.waiting_time = p.get_waiting_time();
+            p.turnaround_time = p.get_turnaround_time();
+        }
+
     }
 
     @Override

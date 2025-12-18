@@ -1,11 +1,7 @@
-import java.util.Comparator;
-import java.util.Collections;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Scanner;
+import java.util.*;
 
 // PROCESS IN GENERAL
-class process {
+class Process {
 
     protected String name;
     protected int arrival_time;
@@ -16,7 +12,7 @@ class process {
     protected int waiting_time;
     protected int turnaround_time;
 
-    public process(String name, int arrival_time, int burst_time, int priority) {
+    public Process(String name, int arrival_time, int burst_time, int priority) {
 
         this.name = name;
         this.arrival_time = arrival_time;
@@ -62,11 +58,11 @@ class process {
 
 // SCHEDULE IN GENERAL
 abstract class Schedule{
-    protected List<process> processes;
+    protected List<Process> processes;
     protected List<String> executionOrder;
     protected int contextSwitchTime;
 
-    public Schedule(List<process> processes, int contextSwitchTime) {
+    public Schedule(List<Process> processes, int contextSwitchTime) {
         this.processes = processes;
         this.contextSwitchTime = contextSwitchTime;
         this.executionOrder = new ArrayList<>();
@@ -89,7 +85,7 @@ abstract class Schedule{
 
     public void printProcessStats(){
         System.out.println("Name\tWaiting\tTurnaround");
-        for(process p : processes)
+        for(Process p : processes)
             System.out.println(p.get_name()+"\t"
             + p.get_waiting_time()+"\t"
             + p.get_turnaround_time());
@@ -97,12 +93,12 @@ abstract class Schedule{
 
     public void printAverages() {
         double avgWaiting = processes.stream()
-                .mapToInt(process::get_waiting_time)
+                .mapToInt(Process::get_waiting_time)
                 .average()
                 .orElse(0.0);
 
         double avgTurnaround = processes.stream()
-                .mapToInt(process::get_turnaround_time)
+                .mapToInt(Process::get_turnaround_time)
                 .average()
                 .orElse(0.0);
 
@@ -111,7 +107,10 @@ abstract class Schedule{
     }
 }
 
-class ag_process extends process {
+//  ==============================================     AG    ============================================    //
+
+
+class ag_process extends Process {
 
     protected int quantum = 0;
     protected List<Integer> quantum_hist = new ArrayList<>();
@@ -146,84 +145,54 @@ class ag_process extends process {
 }
 
 //  ==============================================     SRJF    ============================================    //
-class SJF_process extends process {
+
+class SJF_process extends Process {
     protected int remainingTime = 0;
-    protected int turnaroundTime =0;
     protected boolean started = false;
-    protected static int contextSwitchTime = 0;
-    protected static int current_time = 0;
 
-// LISTS
-    protected List<SJF_process> processes = new ArrayList<>();
-    protected List<String> ExecOrder = new ArrayList<>();
-
-    private SJF_process(String name, int arrival_time, int burst_time) {
+    public SJF_process(String name, int arrival_time, int burst_time) {
         super(name, arrival_time, burst_time, 0); // ignore the priority -> make it 0
         this.remainingTime = burst_time;
-        this.turnaroundTime = 0;
+        this.started = false;
     }
 // SETTERS & GETTERS
     public int get_RemainingTime() {return remainingTime;}
-    public int get_turnaroundTime() {return turnaroundTime;}
-    public void setStarted(boolean started) {this.started = started;}
     public boolean isStarted() {return started;}
-    public void setContextSwitchTime(int contextSwitchTime) {this.contextSwitchTime = contextSwitchTime;}
-    public int getContextSwitchTime() {return contextSwitchTime;}
-    public void addProcess(String name, int arrival_time, int burst_time){
-        processes.add(new SJF_process(name,arrival_time,burst_time));
-    }
-// HELPERS
-    private boolean thereIsExistProcess(List<SJF_process> processes){
-        for (SJF_process p : processes)
-            if(p.remainingTime != 0)
-                return true;
-        return false;
-    }
+    public void setStarted(boolean started) {this.started = started;}
 
-    private List<SJF_process> availableProcesses(){
-        List<SJF_process> res = new ArrayList<>();
-        for(SJF_process p : processes)
-            // if the process didn't finished yet and it's already arrived
-            if(p.arrival_time <= this.current_time && p.remainingTime != 0)
-                res.add(p);
-
-        return res;
-    }
-// MAIN METHODS
-    public void run_schedule() {
-
-        while(thereIsExistProcess(this.processes)) {
-            List<SJF_process> RemainingProcesses = availableProcesses(); // processes that arrived and didn't finished yet
-            List<SJF_process> MinTwo_processes = availableProcesses().stream() // 2 minimum burstTime processes from remains
-                    .sorted(Comparator.comparing(SJF_process::get_burst_time))
-                    .limit(2)
-                    .toList();
-
-            SJF_process toBeExec = MinTwo_processes.get(0); // process with minimum burst time
-            SJF_process scndMinimum_P = MinTwo_processes.get(1);
-            ExecOrder.add(toBeExec.name);
-
-            int endProcess = Math.min(toBeExec.burst_time, scndMinimum_P.arrival_time);
-            toBeExec.remainingTime -= endProcess;
-            this.current_time += endProcess;
-
-
+    public void executeOneUnit(int currentTime) {
+        remainingTime--;
+        if (remainingTime == 0) {
+            turnaround_time = currentTime + 1 - arrival_time;
+            waiting_time = turnaround_time - burst_time;
         }
     }
+}
 
-    public void PrintExecOrder() {
-        for(String name : this.ExecOrder) {
-            System.out.print(name+'\t');
-        }
+class SJF_Schedule extends Schedule {
+    private List<SJF_process> sjf_processes;
+    private PriorityQueue<SJF_process> readyQ;
+
+    public SJF_Schedule(List<Process> processes, int contextSwitchTime) {
+        super(processes, contextSwitchTime);
+        this.sjf_processes =  new ArrayList<>();
+
+        for(Process p : processes)
+            sjf_processes.add(new SJF_process(p.get_name(),p.get_arrival_time(),p.get_burst_time()));
+
+        this.readyQ = new PriorityQueue<>(
+                Comparator.comparing(SJF_process::get_RemainingTime)
+                        .thenComparingInt(SJF_process::get_arrival_time)
+        );
     }
 
-    public double AvgWaitingTime() {
-        return  0; // tmp
+    @Override
+    protected void runSchedule() {
+        // next step
     }
 
-    public double AvgTurnaroundTime(){
-        return  0; // tmp
-    }
+    @Override
+    protected void calculateMetrics() {} // already calculated
 }
 
 

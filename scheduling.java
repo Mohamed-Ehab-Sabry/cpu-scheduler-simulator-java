@@ -319,7 +319,7 @@ class AG_Process extends Process {
     public AG_Process(Process p, int initQuantum) {
         super(p.name, p.arrival_time, p.burst_time, p.priority);
         this.quantum = initQuantum;
-        this.quantum_history.add(initQuantum);
+        // this.quantum_history.add(initQuantum);
     }
 }
 
@@ -423,6 +423,7 @@ class AG_Schedule extends Schedule {
 
                         state = State.FCFS; // Reset cycle
                         time_executed = 0; // Reset execution counter
+                        
                     } else {
                         // Continue current process until 50%
                         int cycle_limit = currentTime + (int) Math.ceil(curr_p.quantum * 0.25); // Run another 25%
@@ -462,18 +463,15 @@ class AG_Schedule extends Schedule {
                         // Run rest of quantum
                         int quantum_end_time = currentTime + (curr_p.quantum - time_executed);
 
-                        // Execute unit-by-unit to catch quantum exhaustion exactly
-                        // Note: Your original code ran "while current < cycle_period" here too
-                        while (currentTime < quantum_end_time && curr_p.burst_time > 0) {
+                        // premptive SJF
                             currentTime++;
                             time_executed++;
                             curr_p.reduce_burst(1);
-                        }
 
                         if (curr_p.burst_time == 0) {
                             handleFinish(curr_p, currentTime, readyQueue, finished);
                             state = State.FCFS;
-                        } else {
+                        } else if (currentTime >= quantum_end_time){
                             // Quantum Exhausted
                             state = State.FCFS;
                             curr_p.time_out = currentTime;

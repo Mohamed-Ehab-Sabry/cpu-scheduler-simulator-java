@@ -13,6 +13,10 @@ class InputWrapper {
 
 class Input {
     List<Proc> processes;
+    // Scheduling parameters
+    int contextSwitch;
+    int rrQuantum;
+    int agingInterval; 
 }
 
 class Proc {
@@ -28,6 +32,10 @@ class ExpectedOutput {
     List<ExpectedProcessResult> processResults;
     double averageWaitingTime;
     double averageTurnaroundTime;
+    // Results for other algorithms
+    ExpectedOutputRR SJF;
+    ExpectedOutputRR RR;
+    ExpectedOutputRR Priority;
 }
 
 class ExpectedProcessResult {
@@ -380,6 +388,92 @@ public class scheduling {
 
     }
 
+    public RRResult roundRobinSchedule(
+            List<process> processes,
+            int quantum,
+            int contextSwitch) {
+        List<process> pending = new ArrayList<>(processes);
+        List<process> readyQueue = new ArrayList<>();
+        List<process> finished = new ArrayList<>();
+        List<String> executionOrder = new ArrayList<>();
+
+        int currentTime = 0;
+        process lastProcess = null;
+
+        while (!pending.isEmpty() || !readyQueue.isEmpty()) {
+
+            // move arrived processes
+            for (int i = 0; i < pending.size(); i++) {
+                if (pending.get(i).arrival_time <= currentTime) {
+                    readyQueue.add(pending.get(i));
+                    pending.remove(i);
+                    i--;
+                }
+            }
+
+            if (readyQueue.isEmpty()) {
+                currentTime++;
+                continue;
+            }
+
+            process p = readyQueue.remove(0);
+
+            // context switch
+            if (lastProcess != null && lastProcess != p) {
+                currentTime += contextSwitch;
+            }
+
+            executionOrder.add(p.get_name());
+            p.set_time_in(currentTime);
+
+            int execTime = Math.min(quantum, p.get_burst_time());
+
+            currentTime += execTime;
+            p.burst_time -= execTime;
+
+            // check arrivals during execution
+            for (int i = 0; i < pending.size(); i++) {
+                if (pending.get(i).arrival_time <= currentTime) {
+                    readyQueue.add(pending.get(i));
+                    pending.remove(i);
+                    i--;
+                }
+            }
+
+            if (p.get_burst_time() > 0) {
+                readyQueue.add(p);
+            } else {
+                p.set_time_out(currentTime);
+                p.set_turnaround_time();
+                finished.add(p);
+            }
+
+            lastProcess = p;
+        }
+
+        double waitSum = 0, tatSum = 0;
+        List<ProcessOutcome> results = new ArrayList<>();
+
+        for (process p : finished) {
+            p.calc_waiting_time();
+            ProcessOutcome o = new ProcessOutcome();
+            o.name = p.get_name();
+            o.waitingTime = p.get_waiting_time();
+            o.turnaroundTime = p.turnaround_time;
+            results.add(o);
+
+            waitSum += o.waitingTime;
+            tatSum += o.turnaroundTime;
+        }
+
+        RRResult result = new RRResult();
+        result.executionOrder = executionOrder;
+        result.processResults = results;
+        result.averageWaitingTime = Math.round((waitSum / finished.size()) * 100.0) / 100.0;
+        result.averageTurnaroundTime = Math.round((tatSum / finished.size()) * 100.0) / 100.0;
+
+        return result;
+    }
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
             System.err.println("Pass path to AG_test*.json");
@@ -395,4 +489,19 @@ public class scheduling {
         }
         System.out.println("avg wait=" + result.averageWaitingTime + " avg tat=" + result.averageTurnaroundTime);
     }
+}
+
+    // Round Robin Scheduler
+    class RRResult {
+        List<String> executionOrder;
+        List<ProcessOutcome> processResults;
+        double averageWaitingTime;
+        double averageTurnaroundTime;
+    }
+    
+    class ExpectedOutputRR {
+    List<String> executionOrder;
+    List<ExpectedProcessResult> processResults;
+    double averageWaitingTime;
+    double averageTurnaroundTime;
 }

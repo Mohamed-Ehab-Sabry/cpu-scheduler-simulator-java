@@ -1,6 +1,55 @@
-import java.util.List;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Scanner;
+import java.util.List;
+
+import com.google.gson.Gson;
+
+class InputWrapper {
+    Input input;
+    ExpectedOutput expectedOutput;
+}
+
+class Input {
+    List<Proc> processes;
+}
+
+class Proc {
+    String name;
+    int arrival;
+    int burst;
+    int priority;
+    int quantum;
+}
+
+class ExpectedOutput {
+    List<String> executionOrder;
+    List<ExpectedProcessResult> processResults;
+    double averageWaitingTime;
+    double averageTurnaroundTime;
+}
+
+class ExpectedProcessResult {
+    String name;
+    int waitingTime;
+    int turnaroundTime;
+    List<Integer> quantumHistory;
+}
+
+class ProcessOutcome {
+    String name;
+    int waitingTime;
+    int turnaroundTime;
+    List<Integer> quantumHistory;
+}
+
+class AgResult {
+    List<String> executionOrder;
+    List<ProcessOutcome> processResults;
+    double averageWaitingTime;
+    double averageTurnaroundTime;
+}
 
 class process {
 
@@ -11,12 +60,15 @@ class process {
     protected int time_in;
     protected int time_out;
     protected int waiting_time;
+    protected int turnaround_time;
+    protected int original_burst_time;
 
     public process(String name, int arrival_time, int burst_time, int priority) {
 
         this.name = name;
         this.arrival_time = arrival_time;
         this.burst_time = burst_time;
+        this.original_burst_time = burst_time;
         this.priority = priority;
         this.time_out = arrival_time;
     }
@@ -31,6 +83,10 @@ class process {
 
     public int get_burst_time() {
         return burst_time;
+    }
+
+    public int get_original_burst_time() {
+        return original_burst_time;
     }
 
     public int get_priority() {
@@ -49,6 +105,10 @@ class process {
         return waiting_time;
     }
 
+    public void sub_burst_time_by_one() {
+        this.burst_time -= 1;
+    }
+
     public void set_time_in(int time_in) {
         this.time_in = time_in;
     }
@@ -57,21 +117,25 @@ class process {
         this.time_out = time_out;
     }
 
-    public void add_to_waiting_time() {
+    public void set_turnaround_time() {
+        this.turnaround_time = this.time_out - this.arrival_time;
+    }
 
-        this.waiting_time += Math.abs(this.time_out - this.time_in);
+    public void calc_waiting_time() {
+        this.waiting_time = this.turnaround_time - this.original_burst_time;
     }
 
 }
 
 class ag_process extends process {
 
-    protected int quantum = 0;
+    protected int quantum;
     protected List<Integer> quantum_hist = new ArrayList<>();
 
     public ag_process(String name, int arrival_time, int burst_time, int priority, int quantum) {
 
         super(name, arrival_time, burst_time, priority);
+        this.quantum = quantum;
     }
 
     public int get_quantum() {
@@ -85,77 +149,250 @@ class ag_process extends process {
 
     }
 
+    public Integer get_lastest_qunatm() {
+
+        return quantum_hist.get(quantum_hist.size() - 1);
+
+    }
+
     public void set_quantum(int quantum) {
 
         this.quantum = quantum;
 
     }
 
-    public void add_to_qunatm_hist(int quantum) {
+    public void add_to_qunatm_hist() {
 
-        quantum_hist.add(quantum);
+        quantum_hist.add(this.quantum);
 
     }
 }
 
+enum State {
+
+    FCFS,
+    PRIORITY,
+    SJF
+
+}
+
 public class scheduling {
 
-    List<ag_process> processes = new ArrayList<>();
-    List<ag_process> arrived_processes = new ArrayList<>();
+    public InputWrapper loadTestCase(String path) throws IOException {
+        String json = Files.readString(Path.of(path));
+        return new Gson().fromJson(json, InputWrapper.class);
+    }
 
-    public void ag_schedule() {
-
-        int current_time = 0;
-        List<String> execution_order = new ArrayList<>();
-
-        try (Scanner sc = new Scanner(System.in)) {
-            System.out.println("How many processes do you want to schedule: ");
-            int num_of_processes = sc.nextInt();
-            sc.nextLine();
-            for (int i = 0; i < num_of_processes; i++) {
-
-                System.out.println("Process " + i + 1 + " name: ");
-                String name = sc.next();
-
-                System.out.println("Arrival time: ");
-                int arrival = sc.nextInt();
-
-                System.out.println("burst time: ");
-                int burst = sc.nextInt();
-
-                System.out.println("priority: ");
-                int priority = sc.nextInt();
-
-                System.out.println("quantum: ");
-                int quantum = sc.nextInt();
-
-                ag_process p = new ag_process(name, arrival, burst, priority, quantum);
-                processes.add(p);
-
-            }
-            processes.sort(java.util.Comparator.comparingInt(p -> p.arrival_time));
+    public List<ag_process> toAgProcesses(List<Proc> procs) {
+        List<ag_process> list = new ArrayList<>();
+        for (Proc p : procs) {
+            list.add(new ag_process(p.name, p.arrival, p.burst, p.priority, p.quantum));
         }
+        return list;
+    }
 
-        while (!processes.isEmpty() || !arrived_processes.isEmpty()) {
+    public AgResult ag_schedule(List<ag_process> processes) {
 
-            for (ag_process p : processes) {
+        List<ag_process> pending = new ArrayList<>(processes);
+        List<ag_process> arrived_processes = new ArrayList<>();
+        List<ag_process> finished_processes = new ArrayList<>();
+        List<String> execution_order = new ArrayList<>();
+        int current_time = 0;
+        State state = State.FCFS;
 
-                if (p.get_arrival_time() >= current_time) {
-                    arrived_processes.add(p);
+        int time_executed = 0;
+        ag_process curr_p;
+        while (!pending.isEmpty() || !arrived_processes.isEmpty()) {
+
+            if (!pending.isEmpty()) {
+
+                for (int i = 0; i < pending.size(); i++) {
+                    ag_process p = pending.get(i);
+                    if (p.get_arrival_time() <= current_time) {
+                        arrived_processes.add(p);
+                        pending.remove(i);
+                        --i;
+                    }
+
                 }
+
             }
+
             if (!arrived_processes.isEmpty()) {
 
-                ag_process curr_p = arrived_processes.get(0);
-                curr_p.set_time_in(current_time);
-                curr_p.add_to_waiting_time();
-                int time_spent = (int) Math.ceil(curr_p.get_quantum() / 0.25);
-                current_time += time_spent;
-                int curr_p_quantum = curr_p.get_quantum();
-                curr_p.add_to_qunatm_hist(curr_p_quantum);
-                curr_p.set_quantum(curr_p_quantum - time_spent);
+                if (state == State.FCFS) {
+                    curr_p = arrived_processes.get(0);
+                    int cycle_period = current_time + (int) Math.ceil(curr_p.get_quantum() * 0.25);
+                    curr_p.set_time_in(current_time);
+                    execution_order.add(curr_p.get_name());
+                    curr_p.add_to_qunatm_hist();
+                    time_executed = 0;
+                    while (current_time < cycle_period && curr_p.get_burst_time() > 0) {
+                        current_time += 1;
+                        time_executed += 1;
+                        curr_p.sub_burst_time_by_one();
+
+                    }
+
+                    if (curr_p.get_burst_time() == 0) {
+                        curr_p.set_time_out(current_time);
+                        curr_p.set_quantum(0);
+                        curr_p.add_to_qunatm_hist();
+                        curr_p.set_turnaround_time();
+                        arrived_processes.remove(0);
+                        finished_processes.add(curr_p);
+
+                    } else if (current_time == cycle_period) {
+
+                        state = State.PRIORITY;
+                    }
+
+                } else if (state == State.PRIORITY) {
+
+                    curr_p = arrived_processes.get(0);
+                    ag_process highest_pri_p = arrived_processes.get(0);
+
+                    for (ag_process p : arrived_processes) {
+                        if (p.get_priority() < highest_pri_p.get_priority()) {
+                            highest_pri_p = p;
+                        }
+                    }
+                    if (curr_p != highest_pri_p) {
+                        state = State.FCFS;
+                        curr_p.set_time_out(current_time);
+                        int latest_qunatum = curr_p.get_lastest_qunatm();
+                        Integer add_to_qunatum = (int) Math.ceil((curr_p.get_quantum() - time_executed) / 2.0);
+                        curr_p.set_quantum(latest_qunatum + add_to_qunatum);
+                        arrived_processes.remove(0);
+                        arrived_processes.remove(highest_pri_p);
+                        arrived_processes.add(0, highest_pri_p);
+                        arrived_processes.add(curr_p);
+                        time_executed = 0;
+                    } else if (curr_p == highest_pri_p) {
+
+                        curr_p = arrived_processes.get(0);
+                        int cycle_period = current_time + (int) Math.ceil(curr_p.get_quantum() * 0.25);
+                        execution_order.add(curr_p.get_name());
+                        while (current_time < cycle_period && curr_p.get_burst_time() > 0) {
+                            current_time += 1;
+                            time_executed += 1;
+                            curr_p.sub_burst_time_by_one();
+                        }
+                        if (curr_p.get_burst_time() == 0) {
+                            curr_p.set_time_out(current_time);
+                            curr_p.set_quantum(0);
+                            curr_p.add_to_qunatm_hist();
+                            curr_p.set_turnaround_time();
+                            arrived_processes.remove(0);
+                            finished_processes.add(curr_p);
+                            state = State.FCFS;
+
+                        } else if (current_time == cycle_period) {
+
+                            state = State.SJF;
+                        }
+                    }
+
+                } else if (state == State.SJF) {
+
+                    curr_p = arrived_processes.get(0);
+                    ag_process shortest_j_p = arrived_processes.get(0);
+
+                    for (ag_process p : arrived_processes) {
+                        if (p.get_burst_time() < shortest_j_p.get_burst_time()) {
+
+                            shortest_j_p = p;
+
+                        }
+                    }
+                    if (curr_p != shortest_j_p) {
+                        state = State.FCFS;
+                        curr_p.set_time_out(current_time);
+                        int latest_qunatum = curr_p.get_lastest_qunatm();
+                        Integer add_to_qunatum = (int) Math.ceil(curr_p.get_quantum() - time_executed);
+                        curr_p.set_quantum(latest_qunatum + add_to_qunatum);
+                        arrived_processes.remove(0);
+                        arrived_processes.remove(shortest_j_p);
+                        arrived_processes.add(0, shortest_j_p);
+                        arrived_processes.add(curr_p);
+
+                    } else if (curr_p == shortest_j_p) {
+
+                        curr_p = arrived_processes.get(0);
+                        int cycle_period = current_time + (curr_p.get_quantum() - time_executed);
+                        execution_order.add(curr_p.get_name());
+                        current_time += 1;
+                        time_executed += 1;
+                        curr_p.sub_burst_time_by_one();
+
+                        if (curr_p.get_burst_time() == 0) {
+                            curr_p.set_time_out(current_time);
+                            curr_p.set_quantum(0);
+                            curr_p.add_to_qunatm_hist();
+                            curr_p.set_turnaround_time();
+                            arrived_processes.remove(0);
+                            finished_processes.add(curr_p);
+                            state = State.FCFS;
+
+                        } else if (current_time == cycle_period) {
+
+                            state = State.FCFS;
+                            curr_p.set_time_out(current_time);
+                            int latest_qunatum = curr_p.get_lastest_qunatm();
+                            Integer add_to_qunatum = 2;
+                            curr_p.set_quantum(latest_qunatum + add_to_qunatum);
+                            arrived_processes.remove(0);
+                            arrived_processes.add(curr_p);
+                        }
+
+                    }
+
+                }
+            } else {
+
+                current_time += 1;
             }
         }
 
+        for (ag_process p : finished_processes) {
+            p.calc_waiting_time();
+        }
+
+        AgResult result = new AgResult();
+        result.executionOrder = execution_order;
+        result.processResults = new ArrayList<>();
+        double waitingSum = 0;
+        double turnaroundSum = 0;
+        for (ag_process p : finished_processes) {
+            ProcessOutcome o = new ProcessOutcome();
+            o.name = p.get_name();
+            o.waitingTime = p.get_waiting_time();
+            o.turnaroundTime = p.turnaround_time;
+            o.quantumHistory = new ArrayList<>(p.get_qunatm_hist());
+            result.processResults.add(o);
+            waitingSum += o.waitingTime;
+            turnaroundSum += o.turnaroundTime;
+        }
+        int n = finished_processes.size();
+        result.averageWaitingTime = n == 0 ? 0 : waitingSum / n;
+        result.averageTurnaroundTime = n == 0 ? 0 : turnaroundSum / n;
+        return result;
+
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length == 0) {
+            System.err.println("Pass path to AG_test*.json");
+            return;
+        }
+        scheduling s = new scheduling();
+        InputWrapper data = s.loadTestCase(args[0]);
+        List<ag_process> items = s.toAgProcesses(data.input.processes);
+        AgResult result = s.ag_schedule(items);
+        System.out.println("Execution order: " + result.executionOrder);
+        for (ProcessOutcome o : result.processResults) {
+            System.out.println(o.name + " wait=" + o.waitingTime + " tat=" + o.turnaroundTime + " q=" + o.quantumHistory);
+        }
+        System.out.println("avg wait=" + result.averageWaitingTime + " avg tat=" + result.averageTurnaroundTime);
     }
 }

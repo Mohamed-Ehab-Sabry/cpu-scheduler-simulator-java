@@ -178,17 +178,6 @@ class SJF_Schedule extends Schedule {
                         .thenComparingInt(SJF_process::get_arrival_time)
         );
     }
-// HELPERS
-public int addArrivedProcesses(int nxtArrival, int curTime){
-        while(nxtArrival < this.sjf_processes.size()
-            && this.sjf_processes.get(nxtArrival).arrival_time <= curTime){
-
-            SJF_process arriving = this.sjf_processes.get(nxtArrival);
-            this.readyQ.add(arriving);
-            ++nxtArrival;
-        }
-        return nxtArrival;
-}
 
 // MAIN FNC
     @Override
@@ -202,7 +191,18 @@ public int addArrivedProcesses(int nxtArrival, int curTime){
         // sort according to arrival time for
         sjf_processes.sort(Comparator.comparingInt(SJF_process::get_arrival_time));
         while(completed < sjf_processes.size()) {
-            nextArrivalIdx = addArrivedProcesses(nextArrivalIdx, currTime);
+            if (currTime % 5 == 0) {  // Print every 5 time units
+                System.out.println("Time: " + currTime + ", Completed: " + completed +
+                        ", ReadyQ size: " + readyQ.size());
+            }
+
+            while(nextArrivalIdx < this.sjf_processes.size()
+                    && this.sjf_processes.get(nextArrivalIdx).arrival_time <= currTime){
+
+                SJF_process arriving = this.sjf_processes.get(nextArrivalIdx);
+                this.readyQ.add(arriving);
+                ++nextArrivalIdx;
+            }
 
             // update all processes' waiting time (except the current)
             for(SJF_process p: readyQ)
@@ -257,8 +257,13 @@ public int addArrivedProcesses(int nxtArrival, int curTime){
 
             // handling idle CPU &(all tasks not completed yet)
             if(current_process == null && readyQ.isEmpty()
-                    && nextArrivalIdx < this.sjf_processes.size())
-                currTime += sjf_processes.get(nextArrivalIdx).arrival_time;
+                    && nextArrivalIdx < this.sjf_processes.size()){
+                int nextArrivalTime = sjf_processes.get(nextArrivalIdx).arrival_time;
+                if (nextArrivalTime > currTime) {
+                    System.out.println("Jumping from time " + currTime + " to " + nextArrivalTime);
+                    currTime = nextArrivalTime;  // SET, not ADD
+                }
+                //currTime += sjf_processes.get(nextArrivalIdx).arrival_time;
         }
 
         // UPDATE ORIGINAL PROCESSES WITH CALC METRICS

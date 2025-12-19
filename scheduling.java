@@ -1,6 +1,271 @@
 import java.util.*;
+import java.nio.file.*;
+import java.io.*;
+import com.google.gson.*;
 
-// ===============      GENERAL PART *FOR ALL* ===============
+// ===============   UNIT TEST ===============
+class Unit_test {
+
+    // Load and run AG tests from JSON files
+    public static void loadAndRunAgTests(String dirPath) throws Exception {
+        File folder = new File(dirPath);
+        if (!folder.exists()) {
+            System.out.println("AG test folder not found: " + dirPath);
+            return;
+        }
+
+        File[] files = folder.listFiles((d, n) -> n.endsWith(".json"));
+        if (files == null)
+            return;
+
+        Arrays.sort(files);
+        for (File file : files) {
+            try {
+                String content = new String(Files.readAllBytes(file.toPath()));
+                JsonObject json = JsonParser.parseString(content).getAsJsonObject();
+
+                // Parse processes
+                List<Process> processes = new ArrayList<>();
+                JsonArray procs = json.getAsJsonObject("input").getAsJsonArray("processes");
+                Map<String, Integer> quanta = new HashMap<>();
+
+                for (JsonElement proc : procs) {
+                    JsonObject p = proc.getAsJsonObject();
+                    String name = p.get("name").getAsString();
+                    int arrival = p.get("arrival").getAsInt();
+                    int burst = p.get("burst").getAsInt();
+                    int priority = p.get("priority").getAsInt();
+                    int quantum = p.get("quantum").getAsInt();
+
+                    processes.add(new Process(name, arrival, burst, priority));
+                    quanta.put(name, quantum);
+                }
+
+                // Run AG schedule
+                System.out.println("\n=========== Running " + file.getName().replace(".json", "") + " ===========");
+                AG_Schedule ag = new AG_Schedule(scheduling.copyList(processes), quanta, 4);
+                ag.execute();
+
+                // Verify against expected output
+                JsonObject expected = json.getAsJsonObject("expectedOutput");
+                verifyAgResultFromJson(file.getName(), ag, expected);
+
+            } catch (Exception e) {
+                System.err.println("Error processing " + file.getName() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    // Load and run general tests (SJF, RR, Priority) from JSON files
+    public static void loadAndRunGeneralTests(String dirPath) throws Exception {
+        File folder = new File(dirPath);
+        if (!folder.exists()) {
+            System.out.println("General test folder not found: " + dirPath);
+            return;
+        }
+
+        File[] files = folder.listFiles((d, n) -> n.endsWith(".json"));
+        if (files == null)
+            return;
+
+        Arrays.sort(files);
+        for (File file : files) {
+            try {
+                String content = new String(Files.readAllBytes(file.toPath()));
+                JsonObject json = JsonParser.parseString(content).getAsJsonObject();
+
+                // Parse input
+                JsonObject input = json.getAsJsonObject("input");
+                int contextSwitch = input.get("contextSwitch").getAsInt();
+                int rrQuantum = input.get("rrQuantum").getAsInt();
+                int agingInterval = input.get("agingInterval").getAsInt();
+
+                // Parse processes
+                List<Process> processes = new ArrayList<>();
+                JsonArray procs = input.getAsJsonArray("processes");
+
+                for (JsonElement proc : procs) {
+                    JsonObject p = proc.getAsJsonObject();
+                    processes.add(new Process(
+                            p.get("name").getAsString(),
+                            p.get("arrival").getAsInt(),
+                            p.get("burst").getAsInt(),
+                            p.get("priority").getAsInt()));
+                }
+
+                System.out.println("\n=========== Running " + json.get("name").getAsString() + " ===========");
+                JsonObject expectedOutput = json.getAsJsonObject("expectedOutput");
+
+                // Run SJF
+                SJF_Schedule sjf = new SJF_Schedule(scheduling.copyList(processes), contextSwitch);
+                sjf.execute();
+                verifyGeneralResultFromJson("SJF", file.getName(), sjf, expectedOutput.getAsJsonObject("SJF"));
+
+                // Run RR
+                RR_Schedule rr = new RR_Schedule(scheduling.copyList(processes), contextSwitch, rrQuantum);
+                rr.execute();
+                verifyGeneralResultFromJson("RR", file.getName(), rr, expectedOutput.getAsJsonObject("RR"));
+
+                // Run Priority
+                PriorityWithAgingSchedule priority = new PriorityWithAgingSchedule(scheduling.copyList(processes),
+                        contextSwitch, agingInterval);
+                priority.execute();
+                verifyGeneralResultFromJson("Priority", file.getName(), priority,
+                        expectedOutput.getAsJsonObject("Priority"));
+
+            } catch (Exception e) {
+                System.err.println("Error processing " + file.getName() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    // Verify AG test results from JSON
+    private static void verifyAgResultFromJson(String testName, AG_Schedule schedule, JsonObject expected) {
+        boolean pass = true;
+
+        // Verify execution order
+        JsonArray expectedOrder = expected.getAsJsonArray("executionOrder");
+        List<String> expectedList = new ArrayList<>();
+        for (JsonElement e : expectedOrder) {
+            expectedList.add(e.getAsString());
+        }
+
+        List<String> actualOrder = schedule.getExecutionOrder();
+        if (!expectedList.equals(actualOrder)) {
+            System.out.println(testName + " Execution order MISMATCH:");
+            System.out.println("  Expected: " + expectedList);
+            System.out.println("  Actual:   " + actualOrder);
+            pass = false;
+        }
+
+        // Verify process results
+        Map<String, Process> actualProcesses = scheduling.mapByName(schedule.getProcesses());
+        JsonArray processResults = expected.getAsJsonArray("processResults");
+
+        for (JsonElement elem : processResults) {
+            JsonObject result = elem.getAsJsonObject();
+            String name = result.get("name").getAsString();
+            int expectedWaiting = result.get("waitingTime").getAsInt();
+            int expectedTurnaround = result.get("turnaroundTime").getAsInt();
+
+            Process actual = actualProcesses.get(name);
+            if (actual == null) {
+                System.out.println(testName + " missing process " + name);
+                pass = false;
+                continue;
+            }
+
+            if (actual.get_waiting_time() != expectedWaiting) {
+                System.out.println(testName + " (" + name + ") waiting time mismatch: expected " + expectedWaiting
+                        + ", actual " + actual.get_waiting_time());
+                pass = false;
+            }
+
+            if (actual.get_turnaround_time() != expectedTurnaround) {
+                System.out.println(testName + " (" + name + ") turnaround time mismatch: expected " + expectedTurnaround
+                        + ", actual " + actual.get_turnaround_time());
+                pass = false;
+            }
+        }
+
+        // Verify averages
+        double expectedAvgWaiting = expected.get("averageWaitingTime").getAsDouble();
+        double expectedAvgTurnaround = expected.get("averageTurnaroundTime").getAsDouble();
+        double actualAvgWaiting = scheduling.averageWaiting(schedule.getProcesses());
+        double actualAvgTurnaround = scheduling.averageTurnaround(schedule.getProcesses());
+
+        if (Math.abs(expectedAvgWaiting - actualAvgWaiting) > 0.01) {
+            System.out.println(testName + " average waiting time mismatch: expected " + expectedAvgWaiting + ", actual "
+                    + actualAvgWaiting);
+            pass = false;
+        }
+
+        if (Math.abs(expectedAvgTurnaround - actualAvgTurnaround) > 0.01) {
+            System.out.println(testName + " average turnaround time mismatch: expected " + expectedAvgTurnaround
+                    + ", actual " + actualAvgTurnaround);
+            pass = false;
+        }
+
+        if (pass) {
+            System.out.println(testName + " PASSED");
+        }
+    }
+
+    // Verify general test results from JSON
+    private static void verifyGeneralResultFromJson(String scheduler, String testName, Schedule schedule,
+            JsonObject expected) {
+        boolean pass = true;
+
+        // Verify execution order
+        JsonArray expectedOrder = expected.getAsJsonArray("executionOrder");
+        List<String> expectedList = new ArrayList<>();
+        for (JsonElement e : expectedOrder) {
+            expectedList.add(e.getAsString());
+        }
+
+        List<String> actualOrder = schedule.getExecutionOrder();
+        if (!expectedList.equals(actualOrder)) {
+            System.out.println(testName + " " + scheduler + " Execution order MISMATCH:");
+            System.out.println("  Expected: " + expectedList);
+            System.out.println("  Actual:   " + actualOrder);
+            pass = false;
+        }
+
+        // Verify process results
+        Map<String, Process> actualProcesses = scheduling.mapByName(schedule.getProcesses());
+        JsonArray processResults = expected.getAsJsonArray("processResults");
+
+        for (JsonElement elem : processResults) {
+            JsonObject result = elem.getAsJsonObject();
+            String name = result.get("name").getAsString();
+            int expectedWaiting = result.get("waitingTime").getAsInt();
+            int expectedTurnaround = result.get("turnaroundTime").getAsInt();
+
+            Process actual = actualProcesses.get(name);
+            if (actual == null) {
+                System.out.println(testName + " " + scheduler + " missing process " + name);
+                pass = false;
+                continue;
+            }
+
+            if (actual.get_waiting_time() != expectedWaiting) {
+                System.out.println(testName + " " + scheduler + " (" + name + ") waiting time mismatch: expected "
+                        + expectedWaiting + ", actual " + actual.get_waiting_time());
+                pass = false;
+            }
+
+            if (actual.get_turnaround_time() != expectedTurnaround) {
+                System.out.println(testName + " " + scheduler + " (" + name + ") turnaround time mismatch: expected "
+                        + expectedTurnaround + ", actual " + actual.get_turnaround_time());
+                pass = false;
+            }
+        }
+
+        // Verify averages
+        double expectedAvgWaiting = expected.get("averageWaitingTime").getAsDouble();
+        double expectedAvgTurnaround = expected.get("averageTurnaroundTime").getAsDouble();
+        double actualAvgWaiting = scheduling.averageWaiting(schedule.getProcesses());
+        double actualAvgTurnaround = scheduling.averageTurnaround(schedule.getProcesses());
+
+        if (Math.abs(expectedAvgWaiting - actualAvgWaiting) > 0.01) {
+            System.out.println(testName + " " + scheduler + " average waiting time mismatch: expected "
+                    + expectedAvgWaiting + ", actual " + actualAvgWaiting);
+            pass = false;
+        }
+
+        if (Math.abs(expectedAvgTurnaround - actualAvgTurnaround) > 0.01) {
+            System.out.println(testName + " " + scheduler + " average turnaround time mismatch: expected "
+                    + expectedAvgTurnaround + ", actual " + actualAvgTurnaround);
+            pass = false;
+        }
+
+        if (pass) {
+            System.out.println(testName + " " + scheduler + " PASSED");
+        }
+    }
+}
+
+// =============== GENERAL PART *FOR ALL* ===============
 class Process {
     protected String name;
     protected int arrival_time;
@@ -710,7 +975,21 @@ class PriorityWithAgingSchedule extends Schedule {
 // ================== MAINF CLASS ==================
 public class scheduling {
     public static void main(String[] args) {
-        runAllHardcodedTests();
+        try {
+            System.out.println("========================================");
+            System.out.println("   CPU SCHEDULER - JSON-based Tests");
+            System.out.println("========================================\n");
+
+            Unit_test.loadAndRunAgTests("test_cases_v4/AG");
+            Unit_test.loadAndRunGeneralTests("test_cases_v4/Other_Schedulers");
+
+            System.out.println("\n========================================");
+            System.out.println("   All Tests Completed");
+            System.out.println("========================================");
+        } catch (Exception e) {
+            System.err.println("Error loading tests: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     // Helper to refresh data for each run
@@ -722,666 +1001,19 @@ public class scheduling {
         return copy;
     }
 
-    // Encapsulates one AG test case (process list + per-process quantum map)
-    private static class AgTestCase {
-        final String name;
-        final List<Process> processes;
-        final Map<String, Integer> initialQuanta;
-
-        final ExpectedResult expected;
-
-        AgTestCase(String name, List<Process> processes, Map<String, Integer> initialQuanta,
-                ExpectedResult expected) {
-            this.name = name;
-            this.processes = processes;
-            this.initialQuanta = initialQuanta;
-            this.expected = expected;
+    public static Map<String, Process> mapByName(List<Process> processes) {
+        Map<String, Process> map = new HashMap<>();
+        for (Process p : processes) {
+            map.put(p.get_name(), p);
         }
+        return map;
     }
 
-    private static class ExpectedProcessResult {
-        final String name;
-        final int waitingTime;
-        final int turnaroundTime;
-        final List<Integer> quantumHistory;
-
-        ExpectedProcessResult(String name, int waitingTime, int turnaroundTime) {
-            this(name, waitingTime, turnaroundTime, null);
-        }
-
-        ExpectedProcessResult(String name, int waitingTime, int turnaroundTime, List<Integer> quantumHistory) {
-            this.name = name;
-            this.waitingTime = waitingTime;
-            this.turnaroundTime = turnaroundTime;
-            this.quantumHistory = quantumHistory == null ? null : new ArrayList<>(quantumHistory);
-        }
+    public static double averageWaiting(List<Process> processes) {
+        return processes.stream().mapToInt(Process::get_waiting_time).average().orElse(0.0);
     }
 
-    private static class ExpectedResult {
-        final List<String> executionOrder;
-        final List<ExpectedProcessResult> processResults;
-        final double averageWaitingTime;
-        final double averageTurnaroundTime;
-
-        ExpectedResult(List<String> executionOrder, List<ExpectedProcessResult> processResults,
-                double averageWaitingTime, double averageTurnaroundTime) {
-            this.executionOrder = new ArrayList<>(executionOrder);
-            this.processResults = new ArrayList<>(processResults);
-            this.averageWaitingTime = averageWaitingTime;
-            this.averageTurnaroundTime = averageTurnaroundTime;
-        }
+    public static double averageTurnaround(List<Process> processes) {
+        return processes.stream().mapToInt(Process::get_turnaround_time).average().orElse(0.0);
     }
-
-    private static void addAgProcess(List<Process> processes, Map<String, Integer> initialQuanta,
-            String name, int arrival, int burst, int priority, int quantum) {
-        processes.add(new Process(name, arrival, burst, priority));
-        initialQuanta.put(name, quantum);
-    }
-
-    private static List<AgTestCase> buildAgTests() {
-        List<AgTestCase> tests = new ArrayList<>();
-
-        // Test 1
-        {
-            List<Process> procs = new ArrayList<>();
-            Map<String, Integer> quanta = new HashMap<>();
-                addAgProcess(procs, quanta, "P1", 0, 17, 4, 7);
-                addAgProcess(procs, quanta, "P2", 2, 6, 7, 9);
-                addAgProcess(procs, quanta, "P3", 5, 11, 3, 4);
-                addAgProcess(procs, quanta, "P4", 15, 4, 6, 6);
-
-                ExpectedResult expected = new ExpectedResult(
-                    Arrays.asList("P1", "P2", "P3", "P2", "P1", "P3", "P4", "P3", "P1", "P4"),
-                    Arrays.asList(
-                        new ExpectedProcessResult("P1", 19, 36, Arrays.asList(7, 10, 14, 0)),
-                        new ExpectedProcessResult("P2", 4, 10, Arrays.asList(9, 12, 0)),
-                        new ExpectedProcessResult("P3", 10, 21, Arrays.asList(4, 6, 8, 0)),
-                        new ExpectedProcessResult("P4", 19, 23, Arrays.asList(6, 8, 0))),
-                    13.0, 22.5);
-
-                tests.add(new AgTestCase("AG_test1", procs, quanta, expected));
-        }
-
-        // Test 2
-        {
-            List<Process> procs = new ArrayList<>();
-            Map<String, Integer> quanta = new HashMap<>();
-            addAgProcess(procs, quanta, "P1", 0, 10, 3, 4);
-            addAgProcess(procs, quanta, "P2", 0, 8, 1, 5);
-            addAgProcess(procs, quanta, "P3", 0, 12, 2, 6);
-            addAgProcess(procs, quanta, "P4", 0, 6, 4, 3);
-            addAgProcess(procs, quanta, "P5", 0, 9, 5, 4);
-
-                ExpectedResult expected = new ExpectedResult(
-                    Arrays.asList("P1", "P2", "P3", "P2", "P4", "P3", "P4", "P3", "P5", "P1", "P4",
-                        "P1", "P5", "P4", "P5"),
-                    Arrays.asList(
-                        new ExpectedProcessResult("P1", 25, 35, Arrays.asList(4, 6, 8, 0)),
-                        new ExpectedProcessResult("P2", 3, 11, Arrays.asList(5, 7, 0)),
-                        new ExpectedProcessResult("P3", 11, 23, Arrays.asList(6, 8, 12, 0)),
-                        new ExpectedProcessResult("P4", 33, 39, Arrays.asList(3, 4, 6, 8, 0)),
-                        new ExpectedProcessResult("P5", 36, 45, Arrays.asList(4, 6, 8, 0))),
-                    21.6, 30.6);
-
-                tests.add(new AgTestCase("AG_test2", procs, quanta, expected));
-        }
-
-        // Test 3
-        {
-            List<Process> procs = new ArrayList<>();
-            Map<String, Integer> quanta = new HashMap<>();
-            addAgProcess(procs, quanta, "P1", 0, 20, 5, 8);
-            addAgProcess(procs, quanta, "P2", 3, 4, 3, 6);
-            addAgProcess(procs, quanta, "P3", 6, 3, 4, 5);
-            addAgProcess(procs, quanta, "P4", 10, 2, 2, 4);
-            addAgProcess(procs, quanta, "P5", 15, 5, 6, 7);
-            addAgProcess(procs, quanta, "P6", 20, 6, 1, 3);
-
-                ExpectedResult expected = new ExpectedResult(
-                    Arrays.asList("P1", "P2", "P1", "P4", "P3", "P1", "P6", "P5", "P6", "P1", "P5"),
-                    Arrays.asList(
-                        new ExpectedProcessResult("P1", 17, 37, Arrays.asList(8, 12, 17, 23, 0)),
-                        new ExpectedProcessResult("P2", 1, 5, Arrays.asList(6, 0)),
-                        new ExpectedProcessResult("P3", 7, 10, Arrays.asList(5, 0)),
-                        new ExpectedProcessResult("P4", 1, 3, Arrays.asList(4, 0)),
-                        new ExpectedProcessResult("P5", 20, 25, Arrays.asList(7, 10, 0)),
-                        new ExpectedProcessResult("P6", 3, 9, Arrays.asList(3, 5, 0))),
-                    8.17, 14.83);
-
-                tests.add(new AgTestCase("AG_test3", procs, quanta, expected));
-        }
-
-        // Test 4
-        {
-            List<Process> procs = new ArrayList<>();
-            Map<String, Integer> quanta = new HashMap<>();
-            addAgProcess(procs, quanta, "P1", 0, 3, 2, 10);
-            addAgProcess(procs, quanta, "P2", 2, 4, 3, 12);
-            addAgProcess(procs, quanta, "P3", 5, 2, 1, 8);
-            addAgProcess(procs, quanta, "P4", 8, 5, 4, 15);
-            addAgProcess(procs, quanta, "P5", 12, 3, 5, 9);
-
-                ExpectedResult expected = new ExpectedResult(
-                    Arrays.asList("P1", "P2", "P3", "P2", "P4", "P5"),
-                    Arrays.asList(
-                        new ExpectedProcessResult("P1", 0, 3, Arrays.asList(10, 0)),
-                        new ExpectedProcessResult("P2", 3, 7, Arrays.asList(12, 17, 0)),
-                        new ExpectedProcessResult("P3", 1, 3, Arrays.asList(8, 0)),
-                        new ExpectedProcessResult("P4", 1, 6, Arrays.asList(15, 0)),
-                        new ExpectedProcessResult("P5", 2, 5, Arrays.asList(9, 0))),
-                    1.4, 4.8);
-
-                tests.add(new AgTestCase("AG_test4", procs, quanta, expected));
-        }
-
-        // Test 5
-        {
-            List<Process> procs = new ArrayList<>();
-            Map<String, Integer> quanta = new HashMap<>();
-            addAgProcess(procs, quanta, "P1", 0, 25, 3, 5);
-            addAgProcess(procs, quanta, "P2", 1, 18, 2, 4);
-            addAgProcess(procs, quanta, "P3", 3, 22, 4, 6);
-            addAgProcess(procs, quanta, "P4", 5, 15, 1, 3);
-            addAgProcess(procs, quanta, "P5", 8, 20, 5, 7);
-            addAgProcess(procs, quanta, "P6", 12, 12, 6, 4);
-
-                ExpectedResult expected = new ExpectedResult(
-                    Arrays.asList("P1", "P2", "P1", "P4", "P3", "P4", "P2", "P4", "P5", "P2", "P1",
-                        "P2", "P6", "P1", "P3", "P1", "P5", "P3", "P6", "P3", "P5", "P6", "P5",
-                        "P6"),
-                    Arrays.asList(
-                        new ExpectedProcessResult("P1", 40, 65, Arrays.asList(5, 7, 10, 14, 16, 0)),
-                        new ExpectedProcessResult("P2", 25, 43, Arrays.asList(4, 6, 8, 10, 0)),
-                        new ExpectedProcessResult("P3", 63, 85, Arrays.asList(6, 8, 11, 16, 0)),
-                        new ExpectedProcessResult("P4", 7, 22, Arrays.asList(3, 5, 7, 0)),
-                        new ExpectedProcessResult("P5", 77, 97, Arrays.asList(7, 10, 14, 16, 0)),
-                        new ExpectedProcessResult("P6", 88, 100, Arrays.asList(4, 6, 8, 11, 0))),
-                    50.0, 68.67);
-
-                tests.add(new AgTestCase("AG_test5", procs, quanta, expected));
-        }
-
-        // Test 6
-        {
-            List<Process> procs = new ArrayList<>();
-            Map<String, Integer> quanta = new HashMap<>();
-            addAgProcess(procs, quanta, "P1", 0, 14, 4, 6);
-            addAgProcess(procs, quanta, "P2", 4, 9, 2, 8);
-            addAgProcess(procs, quanta, "P3", 7, 16, 5, 5);
-            addAgProcess(procs, quanta, "P4", 10, 7, 1, 10);
-            addAgProcess(procs, quanta, "P5", 15, 11, 3, 4);
-            addAgProcess(procs, quanta, "P6", 20, 5, 6, 7);
-            addAgProcess(procs, quanta, "P7", 25, 8, 7, 9);
-
-                ExpectedResult expected = new ExpectedResult(
-                    Arrays.asList("P1", "P2", "P1", "P4", "P3", "P2", "P1", "P5", "P6", "P5", "P6",
-                        "P3", "P5", "P7", "P1", "P3", "P7", "P3", "P7"),
-                    Arrays.asList(
-                        new ExpectedProcessResult("P1", 39, 53, Arrays.asList(6, 8, 11, 15, 0)),
-                        new ExpectedProcessResult("P2", 11, 20, Arrays.asList(8, 10, 0)),
-                        new ExpectedProcessResult("P3", 45, 61, Arrays.asList(5, 7, 10, 14, 0)),
-                        new ExpectedProcessResult("P4", 4, 11, Arrays.asList(10, 0)),
-                        new ExpectedProcessResult("P5", 19, 30, Arrays.asList(4, 6, 8, 0)),
-                        new ExpectedProcessResult("P6", 13, 18, Arrays.asList(7, 10, 0)),
-                        new ExpectedProcessResult("P7", 37, 45, Arrays.asList(9, 12, 17, 0))),
-                    24.0, 34.0);
-
-                tests.add(new AgTestCase("AG_test6", procs, quanta, expected));
-        }
-
-        return tests;
-    }
-
-            private static class GeneralTestCase {
-            final String name;
-            final int contextSwitch;
-            final int rrQuantum;
-            final int agingInterval;
-            final List<Process> processes;
-            final ExpectedResult sjfExpected;
-            final ExpectedResult rrExpected;
-            final ExpectedResult priorityExpected;
-
-            GeneralTestCase(String name, int contextSwitch, int rrQuantum, int agingInterval, List<Process> processes,
-                ExpectedResult sjfExpected, ExpectedResult rrExpected, ExpectedResult priorityExpected) {
-                this.name = name;
-                this.contextSwitch = contextSwitch;
-                this.rrQuantum = rrQuantum;
-                this.agingInterval = agingInterval;
-                this.processes = processes;
-                this.sjfExpected = sjfExpected;
-                this.rrExpected = rrExpected;
-                this.priorityExpected = priorityExpected;
-            }
-            }
-
-            private static GeneralTestCase buildGeneralTest1() {
-            List<Process> procs = new ArrayList<>();
-            procs.add(new Process("P1", 0, 8, 3));
-            procs.add(new Process("P2", 1, 4, 1));
-            procs.add(new Process("P3", 2, 2, 4));
-            procs.add(new Process("P4", 3, 1, 2));
-            procs.add(new Process("P5", 4, 3, 5));
-
-            ExpectedResult sjf = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P4", "P3", "P2", "P5", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 16, 24),
-                    new ExpectedProcessResult("P2", 7, 11),
-                    new ExpectedProcessResult("P3", 4, 6),
-                    new ExpectedProcessResult("P4", 1, 2),
-                    new ExpectedProcessResult("P5", 9, 12)),
-                7.4, 11.0);
-
-            ExpectedResult rr = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P3", "P1", "P4", "P5", "P2", "P1", "P5", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 19, 27),
-                    new ExpectedProcessResult("P2", 14, 18),
-                    new ExpectedProcessResult("P3", 4, 6),
-                    new ExpectedProcessResult("P4", 9, 10),
-                    new ExpectedProcessResult("P5", 17, 20)),
-                12.6, 16.2);
-
-            ExpectedResult priority = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P1", "P4", "P1", "P3", "P1", "P5", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 18, 26),
-                    new ExpectedProcessResult("P2", 1, 5),
-                    new ExpectedProcessResult("P3", 12, 14),
-                    new ExpectedProcessResult("P4", 6, 7),
-                    new ExpectedProcessResult("P5", 16, 19)),
-                10.6, 14.2);
-
-            return new GeneralTestCase("Test_1", 1, 2, 5, procs, sjf, rr, priority);
-            }
-
-            private static GeneralTestCase buildGeneralTest2() {
-            List<Process> procs = new ArrayList<>();
-            procs.add(new Process("P1", 0, 6, 3));
-            procs.add(new Process("P2", 0, 3, 1));
-            procs.add(new Process("P3", 0, 8, 2));
-            procs.add(new Process("P4", 0, 4, 4));
-            procs.add(new Process("P5", 0, 2, 5));
-
-            ExpectedResult sjf = new ExpectedResult(
-                Arrays.asList("P5", "P2", "P4", "P1", "P3"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 12, 18),
-                    new ExpectedProcessResult("P2", 3, 6),
-                    new ExpectedProcessResult("P3", 19, 27),
-                    new ExpectedProcessResult("P4", 7, 11),
-                    new ExpectedProcessResult("P5", 0, 2)),
-                8.2, 12.8);
-
-            ExpectedResult rr = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P3", "P4", "P5", "P1", "P3", "P4", "P3"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 16, 22),
-                    new ExpectedProcessResult("P2", 4, 7),
-                    new ExpectedProcessResult("P3", 23, 31),
-                    new ExpectedProcessResult("P4", 24, 28),
-                    new ExpectedProcessResult("P5", 16, 18)),
-                16.6, 21.2);
-
-            ExpectedResult priority = new ExpectedResult(
-                Arrays.asList("P2", "P3", "P1", "P4", "P3", "P5", "P4"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 11, 17),
-                    new ExpectedProcessResult("P2", 0, 3),
-                    new ExpectedProcessResult("P3", 15, 23),
-                    new ExpectedProcessResult("P4", 25, 29),
-                    new ExpectedProcessResult("P5", 24, 26)),
-                15.0, 19.6);
-
-            return new GeneralTestCase("Test_2", 1, 3, 5, procs, sjf, rr, priority);
-            }
-
-            private static GeneralTestCase buildGeneralTest3() {
-            List<Process> procs = new ArrayList<>();
-            procs.add(new Process("P1", 0, 10, 5));
-            procs.add(new Process("P2", 2, 5, 1));
-            procs.add(new Process("P3", 5, 3, 2));
-            procs.add(new Process("P4", 8, 7, 1));
-            procs.add(new Process("P5", 10, 2, 3));
-
-            ExpectedResult sjf = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P3", "P5", "P4", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 22, 32),
-                    new ExpectedProcessResult("P2", 1, 6),
-                    new ExpectedProcessResult("P3", 4, 7),
-                    new ExpectedProcessResult("P4", 8, 15),
-                    new ExpectedProcessResult("P5", 3, 5)),
-                7.6, 13.0);
-
-            ExpectedResult rr = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P1", "P3", "P4", "P2", "P5", "P1", "P4"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 21, 31),
-                    new ExpectedProcessResult("P2", 18, 23),
-                    new ExpectedProcessResult("P3", 10, 13),
-                    new ExpectedProcessResult("P4", 20, 27),
-                    new ExpectedProcessResult("P5", 16, 18)),
-                17.0, 22.4);
-
-            ExpectedResult priority = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P4", "P3", "P4", "P1", "P5", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 24, 34),
-                    new ExpectedProcessResult("P2", 1, 6),
-                    new ExpectedProcessResult("P3", 9, 12),
-                    new ExpectedProcessResult("P4", 6, 13),
-                    new ExpectedProcessResult("P5", 13, 15)),
-                10.6, 16.0);
-
-            return new GeneralTestCase("Test_3", 1, 4, 4, procs, sjf, rr, priority);
-            }
-
-            private static GeneralTestCase buildGeneralTest4() {
-            List<Process> procs = new ArrayList<>();
-            procs.add(new Process("P1", 0, 12, 2));
-            procs.add(new Process("P2", 4, 9, 3));
-            procs.add(new Process("P3", 8, 15, 1));
-            procs.add(new Process("P4", 12, 6, 4));
-            procs.add(new Process("P5", 16, 11, 2));
-            procs.add(new Process("P6", 20, 5, 5));
-
-            ExpectedResult sjf = new ExpectedResult(
-                Arrays.asList("P1", "P4", "P6", "P2", "P5", "P3"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 0, 12),
-                    new ExpectedProcessResult("P2", 25, 34),
-                    new ExpectedProcessResult("P3", 45, 60),
-                    new ExpectedProcessResult("P4", 2, 8),
-                    new ExpectedProcessResult("P5", 24, 35),
-                    new ExpectedProcessResult("P6", 2, 7)),
-                16.33, 26.0);
-
-            ExpectedResult rr = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P1", "P3", "P4", "P2", "P5", "P1", "P6", "P3", "P4",
-                    "P5", "P3", "P5"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 38, 50),
-                    new ExpectedProcessResult("P2", 26, 35),
-                    new ExpectedProcessResult("P3", 58, 73),
-                    new ExpectedProcessResult("P4", 49, 55),
-                    new ExpectedProcessResult("P5", 57, 68),
-                    new ExpectedProcessResult("P6", 32, 37)),
-                43.33, 53.0);
-
-            ExpectedResult priority = new ExpectedResult(
-                Arrays.asList("P1", "P3", "P1", "P2", "P3", "P5", "P4", "P2", "P6", "P5", "P2"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 14, 26),
-                    new ExpectedProcessResult("P2", 65, 74),
-                    new ExpectedProcessResult("P3", 16, 31),
-                    new ExpectedProcessResult("P4", 38, 44),
-                    new ExpectedProcessResult("P5", 48, 59),
-                    new ExpectedProcessResult("P6", 44, 49)),
-                37.5, 47.17);
-
-            return new GeneralTestCase("Test_4", 2, 5, 6, procs, sjf, rr, priority);
-            }
-
-            private static GeneralTestCase buildGeneralTest5() {
-            List<Process> procs = new ArrayList<>();
-            procs.add(new Process("P1", 0, 3, 3));
-            procs.add(new Process("P2", 1, 2, 1));
-            procs.add(new Process("P3", 2, 4, 2));
-            procs.add(new Process("P4", 3, 1, 4));
-            procs.add(new Process("P5", 4, 3, 5));
-
-            ExpectedResult sjf = new ExpectedResult(
-                Arrays.asList("P1", "P4", "P2", "P5", "P3"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 0, 3),
-                    new ExpectedProcessResult("P2", 5, 7),
-                    new ExpectedProcessResult("P3", 11, 15),
-                    new ExpectedProcessResult("P4", 1, 2),
-                    new ExpectedProcessResult("P5", 5, 8)),
-                4.4, 7.0);
-
-            ExpectedResult rr = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P3", "P1", "P4", "P5", "P3", "P5"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 7, 10),
-                    new ExpectedProcessResult("P2", 2, 4),
-                    new ExpectedProcessResult("P3", 12, 16),
-                    new ExpectedProcessResult("P4", 8, 9),
-                    new ExpectedProcessResult("P5", 13, 16)),
-                8.4, 11.0);
-
-            ExpectedResult priority = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P1", "P3", "P1", "P4", "P5", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 17, 20),
-                    new ExpectedProcessResult("P2", 1, 3),
-                    new ExpectedProcessResult("P3", 5, 9),
-                    new ExpectedProcessResult("P4", 10, 11),
-                    new ExpectedProcessResult("P5", 11, 14)),
-                8.8, 11.4);
-
-            return new GeneralTestCase("Test_5", 1, 2, 3, procs, sjf, rr, priority);
-            }
-
-            private static GeneralTestCase buildGeneralTest6() {
-            List<Process> procs = new ArrayList<>();
-            procs.add(new Process("P1", 0, 14, 4));
-            procs.add(new Process("P2", 3, 7, 2));
-            procs.add(new Process("P3", 6, 10, 5));
-            procs.add(new Process("P4", 9, 5, 1));
-            procs.add(new Process("P5", 12, 8, 3));
-            procs.add(new Process("P6", 15, 4, 6));
-
-            ExpectedResult sjf = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P4", "P6", "P5", "P3", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 40, 54),
-                    new ExpectedProcessResult("P2", 1, 8),
-                    new ExpectedProcessResult("P3", 26, 36),
-                    new ExpectedProcessResult("P4", 3, 8),
-                    new ExpectedProcessResult("P5", 11, 19),
-                    new ExpectedProcessResult("P6", 3, 7)),
-                14.0, 22.0);
-
-            ExpectedResult rr = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P1", "P3", "P4", "P2", "P5", "P1", "P6", "P3", "P4",
-                    "P5", "P1", "P3"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 44, 58),
-                    new ExpectedProcessResult("P2", 18, 25),
-                    new ExpectedProcessResult("P3", 45, 55),
-                    new ExpectedProcessResult("P4", 36, 41),
-                    new ExpectedProcessResult("P5", 35, 43),
-                    new ExpectedProcessResult("P6", 24, 28)),
-                33.67, 41.67);
-
-            ExpectedResult priority = new ExpectedResult(
-                Arrays.asList("P1", "P2", "P4", "P2", "P1", "P5", "P3", "P1", "P6", "P1"),
-                Arrays.asList(
-                    new ExpectedProcessResult("P1", 43, 57),
-                    new ExpectedProcessResult("P2", 8, 15),
-                    new ExpectedProcessResult("P3", 31, 41),
-                    new ExpectedProcessResult("P4", 1, 6),
-                    new ExpectedProcessResult("P5", 16, 24),
-                    new ExpectedProcessResult("P6", 36, 40)),
-                22.5, 30.5);
-
-            return new GeneralTestCase("Test_6", 1, 4, 5, procs, sjf, rr, priority);
-            }
-
-            private static void runAgTestSuiteWithAssertions() {
-            List<AgTestCase> tests = buildAgTests();
-            int defaultQuantum = 4;
-
-            for (AgTestCase tc : tests) {
-                System.out.println("\n=========== Running " + tc.name + " =========");
-                AG_Schedule ag = new AG_Schedule(copyList(tc.processes), tc.initialQuanta, defaultQuantum);
-                ag.execute();
-                verifyAgResult(tc, ag);
-            }
-            }
-
-            private static void runGeneralTestSuite() {
-            List<GeneralTestCase> tests = Arrays.asList(
-                buildGeneralTest1(),
-                buildGeneralTest2(),
-                buildGeneralTest3(),
-                buildGeneralTest4(),
-                buildGeneralTest5(),
-                buildGeneralTest6());
-
-            for (GeneralTestCase tc : tests) {
-                System.out.println("\n=========== Running " + tc.name + " =========");
-
-                SJF_Schedule sjf = new SJF_Schedule(copyList(tc.processes), tc.contextSwitch);
-                sjf.execute();
-                verifyGeneralResult("SJF", tc.name, sjf, tc.sjfExpected, null);
-
-                RR_Schedule rr = new RR_Schedule(copyList(tc.processes), tc.contextSwitch, tc.rrQuantum);
-                rr.execute();
-                verifyGeneralResult("RR", tc.name, rr, tc.rrExpected, null);
-
-                PriorityWithAgingSchedule priority = new PriorityWithAgingSchedule(copyList(tc.processes),
-                    tc.contextSwitch, tc.agingInterval);
-                priority.execute();
-                verifyGeneralResult("Priority", tc.name, priority, tc.priorityExpected, null);
-            }
-            }
-
-            private static void runAllHardcodedTests() {
-            runAgTestSuiteWithAssertions();
-            runGeneralTestSuite();
-            }
-
-            private static void verifyAgResult(AgTestCase tc, AG_Schedule schedule) {
-            ExpectedResult expected = tc.expected;
-            boolean pass = true;
-
-            pass &= compareLists("Execution order", tc.name, expected.executionOrder, schedule.getExecutionOrder());
-
-            Map<String, Process> actualProcesses = mapByName(schedule.getProcesses());
-            Map<String, List<Integer>> quantumHistories = schedule.getQuantumHistories();
-
-            for (ExpectedProcessResult e : expected.processResults) {
-                Process actual = actualProcesses.get(e.name);
-                if (actual == null) {
-                System.out.println(tc.name + " missing process " + e.name);
-                pass = false;
-                continue;
-                }
-
-                if (actual.get_waiting_time() != e.waitingTime) {
-                System.out.println(tc.name + " (" + e.name + ") waiting mismatch: expected " + e.waitingTime
-                    + " got " + actual.get_waiting_time());
-                pass = false;
-                }
-
-                if (actual.get_turnaround_time() != e.turnaroundTime) {
-                System.out.println(tc.name + " (" + e.name + ") turnaround mismatch: expected "
-                    + e.turnaroundTime + " got " + actual.get_turnaround_time());
-                pass = false;
-                }
-
-                if (e.quantumHistory != null) {
-                List<Integer> actualHistory = quantumHistories.getOrDefault(e.name, Collections.emptyList());
-                if (!e.quantumHistory.equals(actualHistory)) {
-                    System.out.println(tc.name + " (" + e.name + ") quantum history mismatch: expected "
-                        + e.quantumHistory + " got " + actualHistory);
-                    pass = false;
-                }
-                }
-            }
-
-            pass &= compareDouble("Average waiting", tc.name, expected.averageWaitingTime,
-                averageWaiting(schedule.getProcesses()));
-            pass &= compareDouble("Average turnaround", tc.name, expected.averageTurnaroundTime,
-                averageTurnaround(schedule.getProcesses()));
-
-            if (pass) {
-                System.out.println(tc.name + " PASSED");
-            }
-            }
-
-            private static void verifyGeneralResult(String scheduler, String testName, Schedule schedule, ExpectedResult expected,
-                Map<String, List<Integer>> quantumHistories) {
-            boolean pass = true;
-
-            pass &= compareLists("Execution order", testName + " " + scheduler, expected.executionOrder,
-                schedule.getExecutionOrder());
-
-            Map<String, Process> actualProcesses = mapByName(schedule.getProcesses());
-            for (ExpectedProcessResult e : expected.processResults) {
-                Process actual = actualProcesses.get(e.name);
-                if (actual == null) {
-                System.out.println(testName + " " + scheduler + " missing process " + e.name);
-                pass = false;
-                continue;
-                }
-
-                if (actual.get_waiting_time() != e.waitingTime) {
-                System.out.println(testName + " " + scheduler + " (" + e.name + ") waiting mismatch: expected "
-                    + e.waitingTime + " got " + actual.get_waiting_time());
-                pass = false;
-                }
-
-                if (actual.get_turnaround_time() != e.turnaroundTime) {
-                System.out.println(testName + " " + scheduler + " (" + e.name + ") turnaround mismatch: expected "
-                    + e.turnaroundTime + " got " + actual.get_turnaround_time());
-                pass = false;
-                }
-
-                if (e.quantumHistory != null && quantumHistories != null) {
-                List<Integer> actualHistory = quantumHistories.getOrDefault(e.name, Collections.emptyList());
-                if (!e.quantumHistory.equals(actualHistory)) {
-                    System.out.println(testName + " " + scheduler + " (" + e.name
-                        + ") quantum history mismatch: expected " + e.quantumHistory + " got " + actualHistory);
-                    pass = false;
-                }
-                }
-            }
-
-            pass &= compareDouble("Average waiting", testName + " " + scheduler, expected.averageWaitingTime,
-                averageWaiting(schedule.getProcesses()));
-            pass &= compareDouble("Average turnaround", testName + " " + scheduler, expected.averageTurnaroundTime,
-                averageTurnaround(schedule.getProcesses()));
-
-            if (pass) {
-                System.out.println(testName + " " + scheduler + " PASSED");
-            }
-            }
-
-            private static boolean compareLists(String label, String testName, List<String> expected, List<String> actual) {
-            if (!expected.equals(actual)) {
-                System.out.println(testName + " " + label + " mismatch:\n expected: " + expected + "\n actual  : "
-                    + actual);
-                return false;
-            }
-            return true;
-            }
-
-            private static boolean compareDouble(String label, String testName, double expected, double actual) {
-            if (Math.abs(expected - actual) > 0.01) {
-                System.out.println(testName + " " + label + " mismatch: expected " + expected + " got " + actual);
-                return false;
-            }
-            return true;
-            }
-
-            private static Map<String, Process> mapByName(List<Process> processes) {
-            Map<String, Process> map = new HashMap<>();
-            for (Process p : processes) {
-                map.put(p.get_name(), p);
-            }
-            return map;
-            }
-
-            private static double averageWaiting(List<Process> processes) {
-            return processes.stream().mapToInt(Process::get_waiting_time).average().orElse(0.0);
-            }
-
-            private static double averageTurnaround(List<Process> processes) {
-            return processes.stream().mapToInt(Process::get_turnaround_time).average().orElse(0.0);
-            }
 }

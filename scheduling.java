@@ -1261,6 +1261,8 @@ public class scheduling {
 
             pass &= compareLists("Execution order", tc.name, expected.executionOrder, schedule.getExecutionOrder());
 
+            printScheduleOutput(tc.name + " AG", schedule, schedule.getQuantumHistories());
+
             Map<String, Process> actualProcesses = mapByName(schedule.getProcesses());
             Map<String, List<Integer>> quantumHistories = schedule.getQuantumHistories();
 
@@ -1310,6 +1312,8 @@ public class scheduling {
 
             pass &= compareLists("Execution order", testName + " " + scheduler, expected.executionOrder,
                 schedule.getExecutionOrder());
+
+            printScheduleOutput(testName + " " + scheduler, schedule, quantumHistories);
 
             Map<String, Process> actualProcesses = mapByName(schedule.getProcesses());
             for (ExpectedProcessResult e : expected.processResults) {
@@ -1383,5 +1387,37 @@ public class scheduling {
 
             private static double averageTurnaround(List<Process> processes) {
             return processes.stream().mapToInt(Process::get_turnaround_time).average().orElse(0.0);
+            }
+
+            private static void printScheduleOutput(String label, Schedule schedule,
+                Map<String, List<Integer>> quantumHistories) {
+            System.out.println(label + " execution order: " + schedule.getExecutionOrder());
+
+            List<Process> sorted = new ArrayList<>(schedule.getProcesses());
+            sorted.sort(Comparator.comparing(Process::get_name));
+
+            System.out.println(label + " process stats:");
+            for (Process p : sorted) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("  ")
+                    .append(p.get_name())
+                    .append(" -> waiting=")
+                    .append(p.get_waiting_time())
+                    .append(", turnaround=")
+                    .append(p.get_turnaround_time())
+                    .append(", finish=")
+                    .append(p.get_time_out());
+
+                if (quantumHistories != null && quantumHistories.containsKey(p.get_name())) {
+                    sb.append(", quantumHistory=")
+                        .append(quantumHistories.get(p.get_name()));
+                }
+
+                System.out.println(sb.toString());
+            }
+
+            System.out.printf("%s averages: waiting=%.2f, turnaround=%.2f%n", label,
+                averageWaiting(schedule.getProcesses()),
+                averageTurnaround(schedule.getProcesses()));
             }
 }

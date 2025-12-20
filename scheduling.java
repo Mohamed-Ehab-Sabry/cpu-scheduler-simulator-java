@@ -141,13 +141,13 @@ class SJF_process extends Process {
     public void executeOneUnit(int currentTime) {
         if(time_in == -1){
             time_in = currentTime;
-            total_waiting_time += (currentTime - arrival_time);
+            total_waiting_time = (currentTime - arrival_time);
         }
 
         remainingTime--;
         if (remainingTime == 0) {
             turnaround_time = time_out - arrival_time;
-            waiting_time = turnaround_time - burst_time;
+            waiting_time = total_waiting_time;
         }
     }
 
@@ -201,7 +201,7 @@ class SJF_Schedule extends Schedule {
 
             // update all processes' waiting time (except the current)
             for(SJF_process p: readyQ)
-                if(p != current_process)
+                if(p != current_process && p.get_RemainingTime() > 0)
                     p.updateWaitingTime(currTime);
 
             // in case the current process has been finished
@@ -209,7 +209,6 @@ class SJF_Schedule extends Schedule {
                 ++completed;
                 current_process.set_time_out(currTime);
                 current_process.turnaround_time = current_process.get_time_out() - current_process.get_arrival_time();
-                current_process.waiting_time = current_process.turnaround_time - current_process.burst_time;
                 current_process = null;
             }
 
@@ -227,7 +226,11 @@ class SJF_Schedule extends Schedule {
 
                         if(this.contextSwitchTime > 0){
                             executionOrder.add("[CS]");
-                            currTime += this.contextSwitchTime;
+                            for(int cs = 0; cs < this.contextSwitchTime; cs++){
+                                for(SJF_process p: readyQ)
+                                    p.updateWaitingTime(currTime + cs);
+                                currTime++;
+                            }
                         }
                     }
 
@@ -272,17 +275,17 @@ class SJF_Schedule extends Schedule {
 
 public class scheduling {
     public static void main(String[] args) {
-        // test 4
+        // test 2
         // BUILDING PROCESSES IN GENERAL
         //Scanner in = new Scanner(System.in);
-        int agingInterval = 6;
-        int contextSwitchTime = 2;
-        int rrQuantum = 5;
+        int agingInterval = 5;
+        int contextSwitchTime = 1;
+        int rrQuantum = 3;
 
         List<Process> general_processes = new ArrayList<>();
-        int[] arrivals = {0,4,8,12,16,20};
-        int[] bursts = {12,9,15,6,11,5};
-        int[] priorities = {2,3,1,4,2,5};
+        int[] arrivals = {0,0,0,0,0};
+        int[] bursts = {6,3,8,4,2};
+        int[] priorities = {3,1,2,4,5};
 
         for(int i = 0; i < agingInterval; i++){
             String name = "P" + String.valueOf(i+1);

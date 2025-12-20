@@ -272,9 +272,6 @@ class SJF_Schedule extends Schedule {
 
 public class scheduling {
     public static void main(String[] args) {
-<<<<<<< HEAD
-
-=======
         // test 4
         // BUILDING PROCESSES IN GENERAL
         //Scanner in = new Scanner(System.in);
@@ -303,6 +300,5 @@ public class scheduling {
         sjfSchedule.printExecutionOrder();
         sjfSchedule.printProcessStats();
         sjfSchedule.printAverages();
->>>>>>> parent of d352a75 (SFJ modify main)
     }
 }

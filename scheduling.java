@@ -275,33 +275,6 @@ class SJF_Schedule extends Schedule {
 
 public class scheduling {
     public static void main(String[] args) {
-        // test 2
-        // BUILDING PROCESSES IN GENERAL
-        //Scanner in = new Scanner(System.in);
-        int agingInterval = 5;
-        int contextSwitchTime = 1;
-        int rrQuantum = 3;
 
-        List<Process> general_processes = new ArrayList<>();
-        int[] arrivals = {0,0,0,0,0};
-        int[] bursts = {6,3,8,4,2};
-        int[] priorities = {3,1,2,4,5};
-
-        for(int i = 0; i < agingInterval; i++){
-            String name = "P" + String.valueOf(i+1);
-            /*System.out.print("Process: "+ name);
-            System.out.print("\nArrival Time:\t");
-            System.out.print("\nBurst Time:\t");
-            System.out.print("\nPriority:\t");*/
-            general_processes.add(new Process(name, arrivals[i], bursts[i], priorities[i]));
-        }
-        //in.close();
-
-        System.out.println("\n===========     1. SRJF    =========\n");
-        SJF_Schedule sjfSchedule = new SJF_Schedule(new ArrayList<>(general_processes), contextSwitchTime);
-        sjfSchedule.execute();
-        sjfSchedule.printExecutionOrder();
-        sjfSchedule.printProcessStats();
-        sjfSchedule.printAverages();
     }
 }

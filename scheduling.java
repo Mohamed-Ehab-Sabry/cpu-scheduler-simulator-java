@@ -141,13 +141,13 @@ class SJF_process extends Process {
     public void executeOneUnit(int currentTime) {
         if(time_in == -1){
             time_in = currentTime;
-            total_waiting_time = (currentTime - arrival_time);
+            total_waiting_time += (currentTime - arrival_time);
         }
 
         remainingTime--;
         if (remainingTime == 0) {
             turnaround_time = time_out - arrival_time;
-            waiting_time = total_waiting_time;
+            waiting_time = turnaround_time - burst_time;
         }
     }
 
@@ -201,7 +201,7 @@ class SJF_Schedule extends Schedule {
 
             // update all processes' waiting time (except the current)
             for(SJF_process p: readyQ)
-                if(p != current_process && p.get_RemainingTime() > 0)
+                if(p != current_process)
                     p.updateWaitingTime(currTime);
 
             // in case the current process has been finished
@@ -209,6 +209,7 @@ class SJF_Schedule extends Schedule {
                 ++completed;
                 current_process.set_time_out(currTime);
                 current_process.turnaround_time = current_process.get_time_out() - current_process.get_arrival_time();
+                current_process.waiting_time = current_process.turnaround_time - current_process.burst_time;
                 current_process = null;
             }
 
@@ -226,11 +227,7 @@ class SJF_Schedule extends Schedule {
 
                         if(this.contextSwitchTime > 0){
                             executionOrder.add("[CS]");
-                            for(int cs = 0; cs < this.contextSwitchTime; cs++){
-                                for(SJF_process p: readyQ)
-                                    p.updateWaitingTime(currTime + cs);
-                                currTime++;
-                            }
+                            currTime += this.contextSwitchTime;
                         }
                     }
 
@@ -275,6 +272,37 @@ class SJF_Schedule extends Schedule {
 
 public class scheduling {
     public static void main(String[] args) {
+<<<<<<< HEAD
 
+=======
+        // test 4
+        // BUILDING PROCESSES IN GENERAL
+        //Scanner in = new Scanner(System.in);
+        int agingInterval = 6;
+        int contextSwitchTime = 2;
+        int rrQuantum = 5;
+
+        List<Process> general_processes = new ArrayList<>();
+        int[] arrivals = {0,4,8,12,16,20};
+        int[] bursts = {12,9,15,6,11,5};
+        int[] priorities = {2,3,1,4,2,5};
+
+        for(int i = 0; i < agingInterval; i++){
+            String name = "P" + String.valueOf(i+1);
+            /*System.out.print("Process: "+ name);
+            System.out.print("\nArrival Time:\t");
+            System.out.print("\nBurst Time:\t");
+            System.out.print("\nPriority:\t");*/
+            general_processes.add(new Process(name, arrivals[i], bursts[i], priorities[i]));
+        }
+        //in.close();
+
+        System.out.println("\n===========     1. SRJF    =========\n");
+        SJF_Schedule sjfSchedule = new SJF_Schedule(new ArrayList<>(general_processes), contextSwitchTime);
+        sjfSchedule.execute();
+        sjfSchedule.printExecutionOrder();
+        sjfSchedule.printProcessStats();
+        sjfSchedule.printAverages();
+>>>>>>> parent of d352a75 (SFJ modify main)
     }
 }

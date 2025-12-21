@@ -116,6 +116,18 @@ abstract class Schedule{
         System.out.printf("\nAverage Waiting Time: %.2f\n", avgWaiting);
         System.out.printf("Average Turnaround Time: %.2f\n", avgTurnaround);
     }
+
+    // Add a process name to the execution order, inserting a "CS" marker
+    // when a context switch occurs between two different processes.
+    protected void addExecutionEntry(String name) {
+        if (this.contextSwitchTime > 0 && !executionOrder.isEmpty()) {
+            String last = executionOrder.get(executionOrder.size() - 1);
+            if (!last.equals(name) && !last.equals("CS")) {
+                executionOrder.add("CS");
+            }
+        }
+        executionOrder.add(name);
+    }
 }
 
 //  ==============================================     1. SRJF    ============================================    //
@@ -140,7 +152,6 @@ class SJF_process extends Process {
     public int getTotal_waiting_time() {return total_waiting_time;}
 
 
-    // build again
     public void executeOneUnit(int currentTime) {
         if(!started) {
             this.started = true;
@@ -210,7 +221,6 @@ class SJF_Schedule extends Schedule {
             if(currentRunning != nextToRun && currentRunning != null) {
                 currentRunning.updateWaitingTime(currentTime);
                 currentTime += contextSwitchTime;  // context switch overhead
-                executionOrder.add("CS");
             }
 
             // if no process is ready -> advance time to the next arrival
@@ -228,7 +238,7 @@ class SJF_Schedule extends Schedule {
 
             // shortest process to run
             currentRunning = readyQ.poll();
-            executionOrder.add(currentRunning.get_name());
+            addExecutionEntry(currentRunning.get_name());
             currentRunning.executeOneUnit(currentTime);
             ++currentTime;
 

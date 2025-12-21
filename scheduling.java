@@ -132,14 +132,18 @@ abstract class Schedule {
     // Add a process name to the execution order, inserting a "CS" marker
     // when a context switch occurs between two different processes.
     protected int addExecutionEntry(String name, int ct) {
-        if (this.contextSwitchTime > 0 && !executionOrder.isEmpty()) {
-            String last = executionOrder.get(executionOrder.size() - 1);
-            if (!last.equals(name) && !last.equals("CS")) {
-                executionOrder.add("CS");
-                ++ct;
+        if(executionOrder.isEmpty())
+            executionOrder.add(name);
+        String last = executionOrder.get(executionOrder.size() - 1);
+        if (this.contextSwitchTime > 0) {
+        /*if (!last.equals(name) && !last.equals("CS")) {
+            executionOrder.add("CS");
+            ++ct;
             }
-        }
-        executionOrder.add(name);
+        }*/
+        if (!last.equals(name) && !last.equals("CS"))
+            executionOrder.add(name);}
+
         return ct;
     }
 }
@@ -307,12 +311,48 @@ class SJF_Schedule extends Schedule {
 
 public class scheduling {
     public static void main(String[] args) {
+        /* test1
         List<Process> processes = new ArrayList<>(Arrays.asList(
                 new Process("P1", 0, 8, 3),
                 new Process("P2", 1, 4, 3),
                 new Process("P3", 2, 2, 3),
                 new Process("P4", 3, 1, 3),
-                new Process("P5", 4, 3, 3)));
+                new Process("P5", 4, 3, 3)));*/
+        /*test3
+        List<Process> processes = new ArrayList<>(Arrays.asList(
+                new Process("P1", 0, 6, 3),
+                new Process("P2", 0, 3, 3),
+                new Process("P3", 0, 8, 3),
+                new Process("P4", 0, 4, 3),
+                new Process("P5", 0, 2, 3)));*/
+
+        /*test4
+        List<Process> processes = new ArrayList<>(Arrays.asList(
+                new Process("P1", 0, 10, 3),
+                new Process("P2", 2, 5, 3),
+                new Process("P3", 5, 3, 3),
+                new Process("P4", 8, 7, 3),
+                new Process("P5", 10, 2, 3)));*/
+
+        /*test5
+        List<Process> processes = new ArrayList<>(Arrays.asList(
+                new Process("P1", 0, 12, 3),
+                new Process("P2", 4, 9, 3),
+                new Process("P3", 8, 15, 3),
+                new Process("P4", 12, 6, 3),
+                new Process("P5", 16, 11, 3),
+                new Process("P6", 20, 5, 3)
+        ));*/
+
+        /*test6*/
+        List<Process> processes = new ArrayList<>(Arrays.asList(
+                new Process("P1", 0, 14, 3),
+                new Process("P2", 3, 7, 3),
+                new Process("P3", 6, 10, 3),
+                new Process("P4", 9, 5, 3),
+                new Process("P5", 12, 8, 3),
+                new Process("P6", 15, 4, 3)
+        ));
 
         SJF_Schedule schedule = new SJF_Schedule(processes, 1);
         schedule.execute();

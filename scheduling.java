@@ -131,14 +131,16 @@ abstract class Schedule {
 
     // Add a process name to the execution order, inserting a "CS" marker
     // when a context switch occurs between two different processes.
-    protected void addExecutionEntry(String name) {
+    protected int addExecutionEntry(String name, int ct) {
         if (this.contextSwitchTime > 0 && !executionOrder.isEmpty()) {
             String last = executionOrder.get(executionOrder.size() - 1);
             if (!last.equals(name) && !last.equals("CS")) {
                 executionOrder.add("CS");
+                ++ct;
             }
         }
         executionOrder.add(name);
+        return ct;
     }
 }
 
@@ -175,13 +177,15 @@ class SJF_process extends Process {
         return total_waiting_time;
     }
 
-    public void executeOneUnit(int currentTime) {
+    public int executeOneUnit(int currentTime) {
         if (!started) {
             this.started = true;
             time_in = currentTime;
         }
         remainingTime--;
         lastRunTime = currentTime;
+        ++currentTime;
+        return currentTime;
     }
 
     // call when a process waiting
@@ -261,9 +265,8 @@ class SJF_Schedule extends Schedule {
 
             // shortest process to run
             currentRunning = readyQ.poll();
-            addExecutionEntry(currentRunning.get_name());
-            currentRunning.executeOneUnit(currentTime);
-            ++currentTime;
+            currentTime = addExecutionEntry(currentRunning.get_name(),currentTime);
+            currentTime = currentRunning.executeOneUnit(currentTime);
 
             // check if p is completed to calc turnaround time and other metrics if
             // available

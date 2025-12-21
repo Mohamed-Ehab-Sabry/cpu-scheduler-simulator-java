@@ -812,11 +812,10 @@ class AG_Schedule extends Schedule {
 
 // ==================== PREEMPTIVE PRIORITY WITH AGING ==================
 
-
 class PriorityProcess extends Process {
     int remainingTime;
-    int tempArrivalTime;  // For aging calculation (when process was last preempted/resumed)
-    int lastAgedTime;     // Track when this process was last aged
+    int tempArrivalTime; // For aging calculation (when process was last preempted/resumed)
+    int lastAgedTime; // Track when this process was last aged
 
     PriorityProcess(String name, int arrival, int burst, int priority) {
         super(name, arrival, burst, priority);
@@ -843,7 +842,8 @@ class PriorityWithAgingSchedule extends Schedule {
     private int time;
     private int arrivalIndex;
     private int agingInterval;
-    private String lastProcessName;  // Track last process for context switch detection
+    private String lastProcessName; // Track last process for context switch detection
+
     PriorityWithAgingSchedule(List<Process> processes, int contextSwitch, int agingInterval) {
         super(processes, contextSwitch);
         this.agingInterval = agingInterval;
@@ -863,8 +863,7 @@ class PriorityWithAgingSchedule extends Schedule {
         readyQueue = new PriorityQueue<>(
                 Comparator.comparingInt(PriorityProcess::get_priority)
                         .thenComparingInt(PriorityProcess::get_arrival_time)
-                        .thenComparing(PriorityProcess::get_name)
-        );
+                        .thenComparing(PriorityProcess::get_name));
     }
 
     @Override
@@ -938,7 +937,7 @@ class PriorityWithAgingSchedule extends Schedule {
             }
             readyQueue.addAll(temp);
 
-            //checking for new arrivals
+            // checking for new arrivals
             while (arrivalIndex < all.size() && all.get(arrivalIndex).get_arrival_time() <= time) {
                 PriorityProcess p = all.get(arrivalIndex++);
                 readyQueue.add(p);
@@ -982,7 +981,8 @@ class PriorityWithAgingSchedule extends Schedule {
     }
 
     @Override
-    protected void calculateMetrics() {}
+    protected void calculateMetrics() {
+    }
 }
 
 // ================== MAINF CLASS ==================
@@ -993,8 +993,8 @@ public class scheduling {
             System.out.println("   CPU SCHEDULER - JSON-based Tests");
             System.out.println("========================================\n");
 
-            Unit_test.loadAndRunAgTests("test_cases_v4/AG");
-            Unit_test.loadAndRunGeneralTests("test_cases_v4/Other_Schedulers");
+            Unit_test.loadAndRunAgTests("test_cases_v5/AG");
+            Unit_test.loadAndRunGeneralTests("test_cases_v5/Other_Schedulers");
 
             System.out.println("\n========================================");
             System.out.println("   All Tests Completed");

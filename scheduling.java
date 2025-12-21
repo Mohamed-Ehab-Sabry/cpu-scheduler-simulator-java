@@ -27,32 +27,43 @@ class Process {
     public String get_name() {
         return name;
     }
+
     public int get_arrival_time() {
         return arrival_time;
     }
+
     public int get_burst_time() {
         return burst_time;
     }
+
     public int get_priority() {
         return priority;
     }
+
     public int get_time_in() {
         return time_in;
     }
+
     public int get_time_out() {
         return time_out;
     }
+
     public int get_waiting_time() {
         return waiting_time;
     }
-    public int get_turnaround_time(){return this.turnaround_time;}
+
+    public int get_turnaround_time() {
+        return this.turnaround_time;
+    }
 
     public void set_time_in(int time_in) {
         this.time_in = time_in;
     }
+
     public void set_time_out(int time_out) {
         this.time_out = time_out;
     }
+
     public void add_to_waiting_time() {
         this.waiting_time += Math.abs(this.time_out - this.time_in);
     }
@@ -60,7 +71,7 @@ class Process {
 }
 
 // SCHEDULE IN GENERAL
-abstract class Schedule{
+abstract class Schedule {
     protected List<Process> processes;
     protected List<String> executionOrder;
     protected int contextSwitchTime;
@@ -72,18 +83,19 @@ abstract class Schedule{
     }
 
     // template
-    public final void execute(){
+    public final void execute() {
         validateInput();
         runSchedule();
         calculateMetrics();
     }
 
-    protected void validateInput(){
-        if(processes.isEmpty() || processes == null)
+    protected void validateInput() {
+        if (processes.isEmpty() || processes == null)
             throw new IllegalArgumentException("No processes to schedule");
     }
 
     protected abstract void runSchedule();
+
     protected abstract void calculateMetrics();
 
     public void printExecutionOrder() {
@@ -94,12 +106,12 @@ abstract class Schedule{
         System.out.println();
     }
 
-    public void printProcessStats(){
+    public void printProcessStats() {
         System.out.println("Name\tWaiting\tTurnaround");
-        for(Process p : processes)
-            System.out.println(p.get_name()+"\t\t"
-            + p.get_waiting_time()+"\t\t"
-            + p.get_turnaround_time());
+        for (Process p : processes)
+            System.out.println(p.get_name() + "\t\t"
+                    + p.get_waiting_time() + "\t\t"
+                    + p.get_turnaround_time());
     }
 
     public void printAverages() {
@@ -130,7 +142,8 @@ abstract class Schedule{
     }
 }
 
-//  ==============================================     1. SRJF    ============================================    //
+// ============================================== 1. SRJF
+// ============================================ //
 
 class SJF_process extends Process {
     protected int remainingTime = 0;
@@ -145,15 +158,25 @@ class SJF_process extends Process {
         this.total_waiting_time = 0;
     }
 
-// SETTERS & GETTERS
-    public int get_RemainingTime() {return remainingTime;}
-    public boolean isStarted() {return started;}
-    public void setStarted(boolean started) {this.started = started;}
-    public int getTotal_waiting_time() {return total_waiting_time;}
+    // SETTERS & GETTERS
+    public int get_RemainingTime() {
+        return remainingTime;
+    }
 
+    public boolean isStarted() {
+        return started;
+    }
+
+    public void setStarted(boolean started) {
+        this.started = started;
+    }
+
+    public int getTotal_waiting_time() {
+        return total_waiting_time;
+    }
 
     public void executeOneUnit(int currentTime) {
-        if(!started) {
+        if (!started) {
             this.started = true;
             time_in = currentTime;
         }
@@ -163,7 +186,7 @@ class SJF_process extends Process {
 
     // call when a process waiting
     public void updateWaitingTime(int currentTime) {
-        if(started && lastRunTime != -1 && remainingTime > 0)
+        if (started && lastRunTime != -1 && remainingTime > 0)
             this.waiting_time += (currentTime - lastRunTime);
     }
 
@@ -181,10 +204,10 @@ class SJF_Schedule extends Schedule {
 
     public SJF_Schedule(List<Process> processes, int contextSwitchTime) {
         super(processes, contextSwitchTime);
-        this.sjf_processes =  new ArrayList<>();
+        this.sjf_processes = new ArrayList<>();
         this.processMap = new HashMap<>();
 
-        for(Process p : processes) {
+        for (Process p : processes) {
             SJF_process sjf = new SJF_process(p.get_name(), p.get_arrival_time(), p.get_burst_time());
             sjf_processes.add(sjf);
             processMap.put(p.get_name(), sjf);
@@ -192,48 +215,48 @@ class SJF_Schedule extends Schedule {
 
         this.readyQ = new PriorityQueue<>(
                 Comparator.comparing(SJF_process::get_RemainingTime)
-                        .thenComparingInt(p -> p.get_arrival_time())
-        );
+                        .thenComparingInt(p -> p.get_arrival_time()));
     }
 
-// MAIN FNC
+    // MAIN FNC
     @Override
     protected void runSchedule() {
         int currentTime = 0;
         SJF_process currentRunning = null;
         int completed = 0;
-        while(completed < this.sjf_processes.size()) {
-            /* load ready processes it the current time
-             -> all processes that has arrival time <= currentTime
-             and not completed*/
-            for(SJF_process p : sjf_processes)
-                if(p.arrival_time <= currentTime
-                   && p.get_RemainingTime() > 0
-                   && !readyQ.contains(p))
-                        readyQ.offer(p);
+        while (completed < this.sjf_processes.size()) {
+            /*
+             * load ready processes it the current time
+             * -> all processes that has arrival time <= currentTime
+             * and not completed
+             */
+            for (SJF_process p : sjf_processes)
+                if (p.arrival_time <= currentTime
+                        && p.get_RemainingTime() > 0
+                        && !readyQ.contains(p))
+                    readyQ.offer(p);
 
             SJF_process nextToRun = null;
-            if(!readyQ.isEmpty())
+            if (!readyQ.isEmpty())
                 nextToRun = readyQ.peek();
 
-            // if p was running already, or it's the first process in the readyQ then currentTime will be the same
-            // else currentTime += context switch cs
-            if(currentRunning != nextToRun && currentRunning != null) {
-                currentRunning.updateWaitingTime(currentTime);
-                currentTime += contextSwitchTime;  // context switch overhead
-            }
-
             // if no process is ready -> advance time to the next arrival
-            if(readyQ.isEmpty() && completed < sjf_processes.size()) {
+            if (readyQ.isEmpty() && completed < sjf_processes.size()) {
                 int nextArrival = Integer.MAX_VALUE;
-                for(SJF_process p:sjf_processes)
-                    if(p.get_RemainingTime() > 0)
+                for (SJF_process p : sjf_processes)
+                    if (p.get_RemainingTime() > 0)
                         nextArrival = Math.min(p.get_arrival_time(), nextArrival);
 
                 // we found a process that hasn't finished -> else there is a logical error
-                if(nextArrival != Integer.MAX_VALUE)
+                if (nextArrival != Integer.MAX_VALUE)
                     currentTime = nextArrival;
                 continue;
+            }
+
+            // Add context switch overhead before switching to a different process
+            if (currentRunning != nextToRun && currentRunning != null) {
+                currentRunning.updateWaitingTime(currentTime);
+                currentTime += contextSwitchTime; // context switch overhead
             }
 
             // shortest process to run
@@ -242,20 +265,21 @@ class SJF_Schedule extends Schedule {
             currentRunning.executeOneUnit(currentTime);
             ++currentTime;
 
-            // check if p is completed to calc turnaround time and other metrics if available
-            if(currentRunning.get_RemainingTime() == 0) {
+            // check if p is completed to calc turnaround time and other metrics if
+            // available
+            if (currentRunning.get_RemainingTime() == 0) {
                 currentRunning.finish(currentTime);
                 ++completed;
                 currentRunning = null;
-            }
-            else // put it back to the readyQ
+            } else // put it back to the readyQ
                 readyQ.offer(currentRunning);
         }
         // while all processes haven't completed yet:
-            // choose minimum remaining of them to run (let we call it p) -> if two have the same remaining time then compare with arrival time
-            // executionOrder.add(p.get_name())
+        // choose minimum remaining of them to run (let we call it p) -> if two have the
+        // same remaining time then compare with arrival time
+        // executionOrder.add(p.get_name())
 
-            // execute p for one time unit
+        // execute p for one time unit
     }
 
     @Override
@@ -281,12 +305,11 @@ class SJF_Schedule extends Schedule {
 public class scheduling {
     public static void main(String[] args) {
         List<Process> processes = new ArrayList<>(Arrays.asList(
-               new Process("P1", 0,8,3),
-                new Process("P2", 1,4,3),
-                new Process("P3", 2,2,3),
-                new Process("P4", 3,1,3),
-                new Process("P5", 4,3,3))
-        );
+                new Process("P1", 0, 8, 3),
+                new Process("P2", 1, 4, 3),
+                new Process("P3", 2, 2, 3),
+                new Process("P4", 3, 1, 3),
+                new Process("P5", 4, 3, 3)));
 
         SJF_Schedule schedule = new SJF_Schedule(processes, 1);
         schedule.execute();

@@ -138,22 +138,14 @@ class SJF_process extends Process {
     public void setStarted(boolean started) {this.started = started;}
     public int getTotal_waiting_time() {return total_waiting_time;}
 
-    public void executeOneUnit(int currentTime) {
-        if(time_in == -1){
-            time_in = currentTime;
-            total_waiting_time += (currentTime - arrival_time);
-        }
 
-        remainingTime--;
-        if (remainingTime == 0) {
-            turnaround_time = time_out - arrival_time;
-            waiting_time = turnaround_time - burst_time;
-        }
+    // build again
+    public void executeOneUnit(int currentTime) {
+
     }
 
-    public void updateWaitingTime(int currentTime) {
-        if(started && remainingTime > 0)
-            total_waiting_time += 1;
+    public void updateWaitingTime() {
+
     }
 }
 
@@ -182,87 +174,6 @@ class SJF_Schedule extends Schedule {
 // MAIN FNC
     @Override
     protected void runSchedule() {
-        int currTime = 0,
-            completed = 0,
-            nextArrivalIdx= 0;
-        SJF_process current_process = null;
-        List<String> actualExecOrder = new ArrayList<>();
-
-        // sort according to arrival time for
-        sjf_processes.sort(Comparator.comparingInt(SJF_process::get_arrival_time));
-        while(completed < sjf_processes.size()) {
-            while(nextArrivalIdx < this.sjf_processes.size()
-                    && this.sjf_processes.get(nextArrivalIdx).arrival_time <= currTime){
-
-                SJF_process arriving = this.sjf_processes.get(nextArrivalIdx);
-                this.readyQ.add(arriving);
-                ++nextArrivalIdx;
-            }
-
-            // update all processes' waiting time (except the current)
-            for(SJF_process p: readyQ)
-                if(p != current_process)
-                    p.updateWaitingTime(currTime);
-
-            // in case the current process has been finished
-            if(current_process != null && current_process.get_RemainingTime() == 0){
-                ++completed;
-                current_process.set_time_out(currTime);
-                current_process.turnaround_time = current_process.get_time_out() - current_process.get_arrival_time();
-                current_process.waiting_time = current_process.turnaround_time - current_process.burst_time;
-                current_process = null;
-            }
-
-            // decide which process to run
-            if(!this.readyQ.isEmpty()){
-                SJF_process next_process = this.readyQ.peek();
-
-                if(current_process ==null
-                    || (current_process.get_RemainingTime() > next_process.get_RemainingTime()
-                        && next_process.get_arrival_time() <= currTime)
-                ){
-                    // handle context of switch (if only switching process)
-                    if(current_process != null && current_process.get_RemainingTime() > 0){
-                        readyQ.add(current_process);
-
-                        if(this.contextSwitchTime > 0){
-                            executionOrder.add("[CS]");
-                            currTime += this.contextSwitchTime;
-                        }
-                    }
-
-                    // start a new process
-                    readyQ.poll();
-                    current_process = next_process;
-                    if(!current_process.isStarted())
-                        current_process.setStarted(true);
-                    executionOrder.add(current_process.get_name());
-                    actualExecOrder.add(current_process.get_name());
-                }
-            }
-
-            // exec curr process for a 1 time unit
-            if(current_process !=null)
-                current_process.executeOneUnit(currTime);
-            else for(SJF_process p: readyQ)
-                p.updateWaitingTime(currTime);
-            ++currTime;
-
-            // handling idle CPU &(all tasks not completed yet)
-            if(current_process == null && readyQ.isEmpty()
-                    && nextArrivalIdx < this.sjf_processes.size())
-                currTime = sjf_processes.get(nextArrivalIdx).get_arrival_time();
-
-        }
-
-        // UPDATE ORIGINAL PROCESSES WITH CALC METRICS
-        for(Process p : processes){
-            SJF_process sjf = processMap.get(p.get_name());
-            if(sjf != null) {
-                p.waiting_time = sjf.waiting_time;
-                p.turnaround_time = sjf.turnaround_time;
-            }
-        }
 
     }
 

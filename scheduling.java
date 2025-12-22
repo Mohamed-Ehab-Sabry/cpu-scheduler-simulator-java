@@ -153,14 +153,13 @@ abstract class Schedule {
 class SJF_process extends Process {
     protected int remainingTime = 0;
     protected boolean started = false;
-    protected int total_waiting_time = 0;
     protected int lastRunTime = -1;
+    protected boolean completed = false;
 
     public SJF_process(String name, int arrival_time, int burst_time) {
         super(name, arrival_time, burst_time, 0); // ignore the priority -> make it 0
         this.remainingTime = burst_time;
         this.started = false;
-        this.total_waiting_time = 0;
     }
 
     // SETTERS & GETTERS
@@ -176,18 +175,24 @@ class SJF_process extends Process {
         this.started = started;
     }
 
-    public int getTotal_waiting_time() {
-        return total_waiting_time;
-    }
+    public boolean isCompleted() {return completed;}
 
-    public int executeOneUnit(int currentTime) {
+    public void executeOneUnit(int currentTime) {
         if (!started) {
             this.started = true;
             time_in = currentTime;
         }
+
         remainingTime--;
-        ++currentTime;
-        return currentTime;
+        lastRunTime = currentTime +1;
+
+        // if finished
+        if(remainingTime == 0) {
+            completed = true;
+            time_out = currentTime + 1;
+            turnaround_time = time_out - arrival_time;
+            waiting_time = turnaround_time - burst_time;
+        }
     }
 
     // call when a process waiting
@@ -197,11 +202,11 @@ class SJF_process extends Process {
     }
 
     // when a process finished
-    public void finish(int finishTime) {
+    /*public void finish(int finishTime) {
         this.time_out = finishTime;
         this.turnaround_time = finishTime - arrival_time;
         this.waiting_time = turnaround_time - burst_time;
-    }
+    }*/
 }
 
 class SJF_Schedule extends Schedule {
@@ -221,8 +226,9 @@ class SJF_Schedule extends Schedule {
         }
 
         this.readyQ = new PriorityQueue<>(
-                Comparator.comparing(SJF_process::get_RemainingTime)
-                        .thenComparingInt(p -> p.get_arrival_time()));
+                Comparator.comparingInt(SJF_process::get_RemainingTime)
+                        .thenComparingInt(p -> p.get_arrival_time())
+                        .thenComparing(p -> p.get_name()));
     }
 
     // MAIN FNC
@@ -272,23 +278,27 @@ class SJF_Schedule extends Schedule {
             } else
                     executionOrder.add(currentRunning.get_name());
             // execute p for only one time unit
-            currentTime = currentRunning.executeOneUnit(currentTime);
-
-            if(currentRunning.remainingTime == 0){
-                currentRunning.finish(currentTime);
+            currentRunning.executeOneUnit(currentTime);
+            ++currentTime;
+            if(currentRunning.isCompleted())
                 ++completed;
-            }
 
         }
 
     }
     @Override
     protected void calculateMetrics() {
+        // Copy metrics from SJF_process to original Process objects
         for (SJF_process sjfProc : sjf_processes) {
-            Process original = processMap.get(sjfProc.get_name());
-            if (original != null) {
-                original.waiting_time = sjfProc.get_waiting_time();
-                original.turnaround_time = sjfProc.get_turnaround_time();
+            // Find the corresponding original process
+            for (Process original : processes) {
+                if (original.get_name().equals(sjfProc.get_name())) {
+                    original.waiting_time = sjfProc.get_waiting_time();
+                    original.turnaround_time = sjfProc.get_turnaround_time();
+                    original.time_in = sjfProc.get_time_in();
+                    original.time_out = sjfProc.get_time_out();
+                    break;
+                }
             }
         }
     }

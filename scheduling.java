@@ -293,39 +293,30 @@ class Process {
     public String get_name() {
         return name;
     }
-
     public int get_arrival_time() {
         return arrival_time;
     }
-
     public int get_burst_time() {
         return burst_time;
     }
-
     public int get_priority() {
         return priority;
     }
-
     public int get_time_in() {
         return time_in;
     }
-
     public int get_time_out() {
         return time_out;
     }
-
     public int get_waiting_time() {
         return waiting_time;
     }
-
     public int get_turnaround_time() {
         return turnaround_time;
     }
-
     public void set_time_in(int time_in) {
         this.time_in = time_in;
     }
-
     public void set_time_out(int time_out) {
         this.time_out = time_out;
     }
@@ -382,7 +373,6 @@ abstract class Schedule {
     public List<String> getExecutionOrder() {
         return new ArrayList<>(executionOrder);
     }
-
     public List<Process> getProcesses() {
         return processes;
     }
@@ -416,17 +406,9 @@ class SJF_process extends Process {
     }
 
     // SETTERS & GETTERS
-    public int get_RemainingTime() {
-        return remainingTime;
-    }
-
-    public boolean isStarted() {
-        return started;
-    }
-
-    public void setStarted(boolean started) {
-        this.started = started;
-    }
+    public int get_RemainingTime() {        return remainingTime;}
+    public boolean isStarted() {return started;}
+    public void setStarted(boolean started) {this.started = started;}
 }
 
 class SJF_Schedule extends Schedule {
@@ -452,27 +434,24 @@ class SJF_Schedule extends Schedule {
         while (completed < sjf_processes.size()) {
             // Load ready processes - those that have arrived and have remaining time
             List<SJF_process> ready = new ArrayList<>();
-            for (SJF_process p : sjf_processes) {
-                if (p.arrival_time <= currentTime && p.remainingTime > 0) {
+            for (SJF_process p : sjf_processes)
+                if (p.arrival_time <= currentTime && p.remainingTime > 0)
                     ready.add(p);
-                }
-            }
 
             // If no process is ready, jump to next arrival time
             if (ready.isEmpty()) {
                 int nextArrival = Integer.MAX_VALUE;
-                for (SJF_process p : sjf_processes) {
-                    if (p.remainingTime > 0) {
+                for (SJF_process p : sjf_processes)
+                    if (p.remainingTime > 0)
                         nextArrival = Math.min(nextArrival, p.arrival_time);
-                    }
-                }
-                if (nextArrival != Integer.MAX_VALUE) {
+
+                if (nextArrival != Integer.MAX_VALUE)
                     currentTime = nextArrival;
-                }
+
                 continue;
             }
 
-            // Choose process with minimum remaining time
+            // choose process with minimum remaining time
             SJF_process next = ready.stream()
                     .min(Comparator.comparingInt(SJF_process::get_RemainingTime)
                             .thenComparingInt(p -> p.get_arrival_time())
@@ -483,9 +462,8 @@ class SJF_Schedule extends Schedule {
             // switching
             if (currentRunning != next) {
                 executionOrder.add(next.get_name());
-                if (currentRunning != null) {
+                if (currentRunning != null) // not first process
                     currentTime += contextSwitchTime;
-                }
             }
 
             currentRunning = next;

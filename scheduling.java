@@ -403,18 +403,19 @@ abstract class Schedule {
     }
 }
 
-// ============================================== 1. SRJF   ============================================ //
+// ============================================== 1. SRJF  ============================================ //
 
 class SJF_process extends Process {
     protected int remainingTime = 0;
     protected boolean started = false;
+    protected int total_waiting_time = 0;
     protected int lastRunTime = -1;
-    protected boolean completed = false;
 
     public SJF_process(String name, int arrival_time, int burst_time) {
         super(name, arrival_time, burst_time, 0); // ignore the priority -> make it 0
         this.remainingTime = burst_time;
         this.started = false;
+        this.total_waiting_time = 0;
     }
 
     // SETTERS & GETTERS
@@ -430,24 +431,18 @@ class SJF_process extends Process {
         this.started = started;
     }
 
-    public boolean isCompleted() {return completed;}
+    public int getTotal_waiting_time() {
+        return total_waiting_time;
+    }
 
-    public void executeOneUnit(int currentTime) {
+    public int executeOneUnit(int currentTime) {
         if (!started) {
             this.started = true;
             time_in = currentTime;
         }
-
         remainingTime--;
-        lastRunTime = currentTime +1;
-
-        // if finished
-        if(remainingTime == 0) {
-            completed = true;
-            time_out = currentTime + 1;
-            turnaround_time = time_out - arrival_time;
-            waiting_time = turnaround_time - burst_time;
-        }
+        ++currentTime;
+        return currentTime;
     }
 
     // call when a process waiting
@@ -457,11 +452,11 @@ class SJF_process extends Process {
     }
 
     // when a process finished
-    /*public void finish(int finishTime) {
+    public void finish(int finishTime) {
         this.time_out = finishTime;
         this.turnaround_time = finishTime - arrival_time;
         this.waiting_time = turnaround_time - burst_time;
-    }*/
+    }
 }
 
 class SJF_Schedule extends Schedule {
@@ -481,7 +476,7 @@ class SJF_Schedule extends Schedule {
         }
 
         this.readyQ = new PriorityQueue<>(
-                Comparator.comparingInt(SJF_process::get_RemainingTime)
+                Comparator.comparing(SJF_process::get_RemainingTime)
                         .thenComparingInt(p -> p.get_arrival_time())
                         .thenComparing(p -> p.get_name()));
     }
@@ -493,27 +488,31 @@ class SJF_Schedule extends Schedule {
         SJF_process currentRunning = null;
         int completed = 0;
         // while all processes haven't completed yet:
-        // ✅ load ready processes it the current time -> all processes that has arrival time <= currentTime and not completed
-        // ✅ choose minimum remaining of them to run (let we call it p) -> if two have the same remaining time then compare with arrival time
+        // ✅ load ready processes it the current time -> all processes that has arrival
+        // time <= currentTime and not completed
+        // ✅ choose minimum remaining of them to run (let we call it p) -> if two have
+        // the same remaining time then compare with arrival time
         // ✅ executionOrder.add(p.get_name())
-        // ✅ if p was running already, or it's the first process in the readyQ then currentTime will be the same
+        // ✅ if p was running already, or it's the first process in the readyQ then
+        // currentTime will be the same
         // ✅ else currentTime += context switch cs
         // ✅ execute p for one time unit
-        // ✅ check if p is completed to calc turnaround time and other metrics if available
-        while(completed < sjf_processes.size()) {
+        // ✅ check if p is completed to calc turnaround time and other metrics if
+        // available
+        while (completed < sjf_processes.size()) {
 
             // load ready processes
-            for(SJF_process p : sjf_processes)
-                if(p.remainingTime > 0 && p.arrival_time <= currentTime)
+            for (SJF_process p : sjf_processes)
+                if (p.remainingTime > 0 && p.arrival_time <= currentTime)
                     readyQ.offer(p);
 
             // if no process is ready and all process not completed yet
-            if(readyQ.isEmpty() && completed < sjf_processes.size()) {
+            if (readyQ.isEmpty() && completed < sjf_processes.size()) {
                 int nxt_arrival = Integer.MAX_VALUE;
                 for (SJF_process p : sjf_processes)
-                    if(p.remainingTime > 0)
+                    if (p.remainingTime > 0)
                         nxt_arrival = Math.min(nxt_arrival, p.get_arrival_time());
-                if(nxt_arrival != Integer.MAX_VALUE)
+                if (nxt_arrival != Integer.MAX_VALUE)
                     currentTime = nxt_arrival;
                 continue;
             }
@@ -531,16 +530,19 @@ class SJF_Schedule extends Schedule {
                     executionOrder.add(currentRunning.get_name());
                 }
             } else
-                    executionOrder.add(currentRunning.get_name());
+                executionOrder.add(currentRunning.get_name());
             // execute p for only one time unit
-            currentRunning.executeOneUnit(currentTime);
-            ++currentTime;
-            if(currentRunning.isCompleted())
+            currentTime = currentRunning.executeOneUnit(currentTime);
+
+            if (currentRunning.remainingTime == 0) {
+                currentRunning.finish(currentTime);
                 ++completed;
+            }
 
         }
 
     }
+
     @Override
     protected void calculateMetrics() {
         // Copy metrics from SJF_process to original Process objects
@@ -557,24 +559,8 @@ class SJF_Schedule extends Schedule {
             }
         }
     }
-    /*@Override
-    protected void calculateMetrics() {
-        // update waiting time for all processes
-        for (SJF_process sp : sjf_processes) {
-            Process original = null;
-            for (Process p : processes) {
-                if (p.get_name().equals(sp.get_name())) {
-                    original = p;
-                    break;
-                }
-            }
-            if (original != null) {
-                // Waiting time = Turnaround time - Burst time
-                original.waiting_time = sp.get_turnaround_time() - sp.get_burst_time();
-                original.turnaround_time = sp.get_turnaround_time();
-            }
-        }*/
-    }
+}
+
 
 // ================== 2. ROUND ROBIN (Adapted from Myscheduling)
 // ==================

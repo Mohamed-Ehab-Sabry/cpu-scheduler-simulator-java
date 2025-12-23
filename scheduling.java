@@ -1,145 +1,67 @@
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import java.io.File;
+import java.nio.file.Files;
 import java.util.*;
-import java.nio.file.*;
-import java.io.*;
 import com.google.gson.*;
 
-// ===============   UNIT TEST ===============
 class Unit_test {
 
-    // Load and run AG tests from JSON files
-    public static void loadAndRunAgTests(String dirPath) throws Exception {
-        File folder = new File(dirPath);
-        if (!folder.exists()) {
-            System.out.println("AG test folder not found: " + dirPath);
-            return;
-        }
-
-        File[] files = folder.listFiles((d, n) -> n.endsWith(".json"));
-        if (files == null)
-            return;
-
-        Arrays.sort(files);
-        for (File file : files) {
-            try {
-                String content = new String(Files.readAllBytes(file.toPath()));
-                JsonObject json = JsonParser.parseString(content).getAsJsonObject();
-
-                // Parse processes
-                List<Process> processes = new ArrayList<>();
-                JsonArray procs = json.getAsJsonObject("input").getAsJsonArray("processes");
-                Map<String, Integer> quanta = new HashMap<>();
-
-                for (JsonElement proc : procs) {
-                    JsonObject p = proc.getAsJsonObject();
-                    String name = p.get("name").getAsString();
-                    int arrival = p.get("arrival").getAsInt();
-                    int burst = p.get("burst").getAsInt();
-                    int priority = p.get("priority").getAsInt();
-                    int quantum = p.get("quantum").getAsInt();
-
-                    processes.add(new Process(name, arrival, burst, priority));
-                    quanta.put(name, quantum);
-                }
-
-                // Run AG schedule
-                System.out.println("\n=========== Running " + file.getName().replace(".json", "") + " ===========");
-                AG_Schedule ag = new AG_Schedule(scheduling.copyList(processes), quanta, 4);
-                ag.execute();
-
-                // Verify against expected output
-                JsonObject expected = json.getAsJsonObject("expectedOutput");
-                verifyAgResultFromJson(file.getName(), ag, expected);
-
-            } catch (Exception e) {
-                System.err.println("Error processing " + file.getName() + ": " + e.getMessage());
-            }
-        }
+    // ================== HELPER METHOD ==================
+    private JsonObject loadJson(String filePath) throws Exception {
+        String content = new String(Files.readAllBytes(new File(filePath).toPath()));
+        return JsonParser.parseString(content).getAsJsonObject();
     }
 
-    // Load and run general tests (SJF, RR, Priority) from JSON files
-    public static void loadAndRunGeneralTests(String dirPath) throws Exception {
-        File folder = new File(dirPath);
-        if (!folder.exists()) {
-            System.out.println("General test folder not found: " + dirPath);
-            return;
+    private List<Process> parseProcesses(JsonObject json) {
+        List<Process> processes = new ArrayList<>();
+        JsonArray procs = json.getAsJsonObject("input").getAsJsonArray("processes");
+        for (JsonElement proc : procs) {
+            JsonObject p = proc.getAsJsonObject();
+            processes.add(new Process(
+                    p.get("name").getAsString(),
+                    p.get("arrival").getAsInt(),
+                    p.get("burst").getAsInt(),
+                    p.get("priority").getAsInt()));
         }
-
-        File[] files = folder.listFiles((d, n) -> n.endsWith(".json"));
-        if (files == null)
-            return;
-
-        Arrays.sort(files);
-        for (File file : files) {
-            try {
-                String content = new String(Files.readAllBytes(file.toPath()));
-                JsonObject json = JsonParser.parseString(content).getAsJsonObject();
-
-                // Parse input
-                JsonObject input = json.getAsJsonObject("input");
-                int contextSwitch = input.get("contextSwitch").getAsInt();
-                int rrQuantum = input.get("rrQuantum").getAsInt();
-                int agingInterval = input.get("agingInterval").getAsInt();
-
-                // Parse processes
-                List<Process> processes = new ArrayList<>();
-                JsonArray procs = input.getAsJsonArray("processes");
-
-                for (JsonElement proc : procs) {
-                    JsonObject p = proc.getAsJsonObject();
-                    processes.add(new Process(
-                            p.get("name").getAsString(),
-                            p.get("arrival").getAsInt(),
-                            p.get("burst").getAsInt(),
-                            p.get("priority").getAsInt()));
-                }
-
-                System.out.println("\n=========== Running " + json.get("name").getAsString() + " ===========");
-                JsonObject expectedOutput = json.getAsJsonObject("expectedOutput");
-
-                // Run SJF
-                SJF_Schedule sjf = new SJF_Schedule(scheduling.copyList(processes), contextSwitch);
-                sjf.execute();
-                verifyGeneralResultFromJson("SJF", file.getName(), sjf, expectedOutput.getAsJsonObject("SJF"));
-
-                // Run RR
-                RR_Schedule rr = new RR_Schedule(scheduling.copyList(processes), contextSwitch, rrQuantum);
-                rr.execute();
-                verifyGeneralResultFromJson("RR", file.getName(), rr, expectedOutput.getAsJsonObject("RR"));
-
-                // Run Priority
-                PriorityWithAgingSchedule priority = new PriorityWithAgingSchedule(scheduling.copyList(processes),
-                        contextSwitch, agingInterval);
-                priority.execute();
-                verifyGeneralResultFromJson("Priority", file.getName(), priority,
-                        expectedOutput.getAsJsonObject("Priority"));
-
-            } catch (Exception e) {
-                System.err.println("Error processing " + file.getName() + ": " + e.getMessage());
-            }
-        }
+        return processes;
     }
 
-    // Verify AG test results from JSON
-    private static void verifyAgResultFromJson(String testName, AG_Schedule schedule, JsonObject expected) {
-        boolean pass = true;
-
-        // Verify execution order
-        JsonArray expectedOrder = expected.getAsJsonArray("executionOrder");
-        List<String> expectedList = new ArrayList<>();
-        for (JsonElement e : expectedOrder) {
-            expectedList.add(e.getAsString());
+    private Map<String, Integer> parseQuanta(JsonObject json) {
+        Map<String, Integer> quanta = new HashMap<>();
+        JsonArray procs = json.getAsJsonObject("input").getAsJsonArray("processes");
+        for (JsonElement proc : procs) {
+            JsonObject p = proc.getAsJsonObject();
+            quanta.put(p.get("name").getAsString(), p.get("quantum").getAsInt());
         }
+        return quanta;
+    }
 
-        List<String> actualOrder = schedule.getExecutionOrder();
-        if (!expectedList.equals(actualOrder)) {
-            System.out.println(testName + " Execution order MISMATCH:");
-            System.out.println("  Expected: " + expectedList);
-            System.out.println("  Actual:   " + actualOrder);
-            pass = false;
-        }
+    // ================== PARAMETERIZED TESTS ==================
 
-        // Verify process results
-        Map<String, Process> actualProcesses = scheduling.mapByName(schedule.getProcesses());
+    void testAGFiles(String filePath) throws Exception {
+        // Arrange
+        JsonObject json = loadJson(filePath);
+        List<Process> processes = parseProcesses(json);
+        Map<String, Integer> quanta = parseQuanta(json);
+
+        // Act
+        AG_Schedule scheduler = new AG_Schedule(scheduling.copyList(processes), quanta, 4);
+        scheduler.execute();
+
+        // Assert
+        JsonObject expected = json.getAsJsonObject("expectedOutput");
+
+        // Execution order
+        JsonArray expectedOrderJson = expected.getAsJsonArray("executionOrder");
+        List<String> expectedOrder = new ArrayList<>();
+        expectedOrderJson.forEach(e -> expectedOrder.add(e.getAsString()));
+        assertEquals(expectedOrder, scheduler.getExecutionOrder());
+
+        // Process results
+        Map<String, Process> actualProcesses = scheduling.mapByName(scheduler.getProcesses());
         JsonArray processResults = expected.getAsJsonArray("processResults");
 
         for (JsonElement elem : processResults) {
@@ -149,70 +71,55 @@ class Unit_test {
             int expectedTurnaround = result.get("turnaroundTime").getAsInt();
 
             Process actual = actualProcesses.get(name);
-            if (actual == null) {
-                System.out.println(testName + " missing process " + name);
-                pass = false;
-                continue;
-            }
-
-            if (actual.get_waiting_time() != expectedWaiting) {
-                System.out.println(testName + " (" + name + ") waiting time mismatch: expected " + expectedWaiting
-                        + ", actual " + actual.get_waiting_time());
-                pass = false;
-            }
-
-            if (actual.get_turnaround_time() != expectedTurnaround) {
-                System.out.println(testName + " (" + name + ") turnaround time mismatch: expected " + expectedTurnaround
-                        + ", actual " + actual.get_turnaround_time());
-                pass = false;
-            }
+            assertNotNull(actual);
+            assertEquals(expectedWaiting, actual.get_waiting_time());
+            assertEquals(expectedTurnaround, actual.get_turnaround_time());
         }
 
-        // Verify averages
-        double expectedAvgWaiting = expected.get("averageWaitingTime").getAsDouble();
-        double expectedAvgTurnaround = expected.get("averageTurnaroundTime").getAsDouble();
-        double actualAvgWaiting = scheduling.averageWaiting(schedule.getProcesses());
-        double actualAvgTurnaround = scheduling.averageTurnaround(schedule.getProcesses());
-
-        if (Math.abs(expectedAvgWaiting - actualAvgWaiting) > 0.01) {
-            System.out.println(testName + " average waiting time mismatch: expected " + expectedAvgWaiting + ", actual "
-                    + actualAvgWaiting);
-            pass = false;
-        }
-
-        if (Math.abs(expectedAvgTurnaround - actualAvgTurnaround) > 0.01) {
-            System.out.println(testName + " average turnaround time mismatch: expected " + expectedAvgTurnaround
-                    + ", actual " + actualAvgTurnaround);
-            pass = false;
-        }
-
-        if (pass) {
-            System.out.println(testName + " PASSED");
-        }
+        // Average times
+        assertEquals(expected.get("averageWaitingTime").getAsDouble(),
+                scheduling.averageWaiting(scheduler.getProcesses()), 0.01);
+        assertEquals(expected.get("averageTurnaroundTime").getAsDouble(),
+                scheduling.averageTurnaround(scheduler.getProcesses()), 0.01);
     }
 
-    // Verify general test results from JSON
-    private static void verifyGeneralResultFromJson(String scheduler, String testName, Schedule schedule,
-            JsonObject expected) {
-        boolean pass = true;
+    void testOtherSchedulerFiles(String filePath) throws Exception {
+        // Arrange
+        JsonObject json = loadJson(filePath);
+        JsonObject input = json.getAsJsonObject("input");
 
-        // Verify execution order
-        JsonArray expectedOrder = expected.getAsJsonArray("executionOrder");
-        List<String> expectedList = new ArrayList<>();
-        for (JsonElement e : expectedOrder) {
-            expectedList.add(e.getAsString());
-        }
+        int contextSwitch = input.get("contextSwitch").getAsInt();
+        int rrQuantum = input.get("rrQuantum").getAsInt();
+        int agingInterval = input.get("agingInterval").getAsInt();
 
-        List<String> actualOrder = schedule.getExecutionOrder();
-        if (!expectedList.equals(actualOrder)) {
-            System.out.println(testName + " " + scheduler + " Execution order MISMATCH:");
-            System.out.println("  Expected: " + expectedList);
-            System.out.println("  Actual:   " + actualOrder);
-            pass = false;
-        }
+        List<Process> processes = parseProcesses(json);
+        JsonObject expectedOutput = json.getAsJsonObject("expectedOutput");
 
-        // Verify process results
-        Map<String, Process> actualProcesses = scheduling.mapByName(schedule.getProcesses());
+        // ---- SJF ----
+        SJF_Schedule sjf = new SJF_Schedule(scheduling.copyList(processes), contextSwitch);
+        sjf.execute();
+        assertProcessResults(sjf, expectedOutput.getAsJsonObject("SJF"));
+
+        // ---- RR ----
+        RR_Schedule rr = new RR_Schedule(scheduling.copyList(processes), contextSwitch, rrQuantum);
+        rr.execute();
+        assertProcessResults(rr, expectedOutput.getAsJsonObject("RR"));
+
+        // ---- Priority ----
+        PriorityWithAgingSchedule priority = new PriorityWithAgingSchedule(scheduling.copyList(processes),
+                contextSwitch, agingInterval);
+        priority.execute();
+        assertProcessResults(priority, expectedOutput.getAsJsonObject("Priority"));
+    }
+
+    // ================== HELPER ASSERT METHOD ==================
+    private void assertProcessResults(Schedule scheduler, JsonObject expected) {
+        JsonArray expectedOrderJson = expected.getAsJsonArray("executionOrder");
+        List<String> expectedOrder = new ArrayList<>();
+        expectedOrderJson.forEach(e -> expectedOrder.add(e.getAsString()));
+        assertEquals(expectedOrder, scheduler.getExecutionOrder());
+
+        Map<String, Process> actualProcesses = scheduling.mapByName(scheduler.getProcesses());
         JsonArray processResults = expected.getAsJsonArray("processResults");
 
         for (JsonElement elem : processResults) {
@@ -222,46 +129,15 @@ class Unit_test {
             int expectedTurnaround = result.get("turnaroundTime").getAsInt();
 
             Process actual = actualProcesses.get(name);
-            if (actual == null) {
-                System.out.println(testName + " " + scheduler + " missing process " + name);
-                pass = false;
-                continue;
-            }
-
-            if (actual.get_waiting_time() != expectedWaiting) {
-                System.out.println(testName + " " + scheduler + " (" + name + ") waiting time mismatch: expected "
-                        + expectedWaiting + ", actual " + actual.get_waiting_time());
-                pass = false;
-            }
-
-            if (actual.get_turnaround_time() != expectedTurnaround) {
-                System.out.println(testName + " " + scheduler + " (" + name + ") turnaround time mismatch: expected "
-                        + expectedTurnaround + ", actual " + actual.get_turnaround_time());
-                pass = false;
-            }
+            assertNotNull(actual);
+            assertEquals(expectedWaiting, actual.get_waiting_time());
+            assertEquals(expectedTurnaround, actual.get_turnaround_time());
         }
 
-        // Verify averages
-        double expectedAvgWaiting = expected.get("averageWaitingTime").getAsDouble();
-        double expectedAvgTurnaround = expected.get("averageTurnaroundTime").getAsDouble();
-        double actualAvgWaiting = scheduling.averageWaiting(schedule.getProcesses());
-        double actualAvgTurnaround = scheduling.averageTurnaround(schedule.getProcesses());
-
-        if (Math.abs(expectedAvgWaiting - actualAvgWaiting) > 0.01) {
-            System.out.println(testName + " " + scheduler + " average waiting time mismatch: expected "
-                    + expectedAvgWaiting + ", actual " + actualAvgWaiting);
-            pass = false;
-        }
-
-        if (Math.abs(expectedAvgTurnaround - actualAvgTurnaround) > 0.01) {
-            System.out.println(testName + " " + scheduler + " average turnaround time mismatch: expected "
-                    + expectedAvgTurnaround + ", actual " + actualAvgTurnaround);
-            pass = false;
-        }
-
-        if (pass) {
-            System.out.println(testName + " " + scheduler + " PASSED");
-        }
+        assertEquals(expected.get("averageWaitingTime").getAsDouble(),
+                scheduling.averageWaiting(scheduler.getProcesses()), 0.01);
+        assertEquals(expected.get("averageTurnaroundTime").getAsDouble(),
+                scheduling.averageTurnaround(scheduler.getProcesses()), 0.01);
     }
 }
 
@@ -988,14 +864,26 @@ public class scheduling {
     public static void main(String[] args) {
         try {
             System.out.println("========================================");
-            System.out.println("   CPU SCHEDULER - JSON-based Tests");
+            System.out.println(" CPU SCHEDULER - JSON-based Tests");
             System.out.println("========================================\n");
 
-            Unit_test.loadAndRunAgTests("test_cases_v5/AG");
-            Unit_test.loadAndRunGeneralTests("test_cases_v5/Other_Schedulers");
+            Unit_test ut = new Unit_test();
+            ut.testAGFiles("test_cases_v5/AG/AG_test1.json");
+            ut.testAGFiles("test_cases_v5/AG/AG_test2.json");
+            ut.testAGFiles("test_cases_v5/AG/AG_test3.json");
+            ut.testAGFiles("test_cases_v5/AG/AG_test4.json");
+            ut.testAGFiles("test_cases_v5/AG/AG_test5.json");
+            ut.testAGFiles("test_cases_v5/AG/AG_test6.json");
+
+            ut.testOtherSchedulerFiles("test_cases_v5/Other_Schedulers/test_1.json");
+            ut.testOtherSchedulerFiles("test_cases_v5/Other_Schedulers/test_2.json");
+            ut.testOtherSchedulerFiles("test_cases_v5/Other_Schedulers/test_3.json");
+            ut.testOtherSchedulerFiles("test_cases_v5/Other_Schedulers/test_4.json");
+            ut.testOtherSchedulerFiles("test_cases_v5/Other_Schedulers/test_5.json");
+            ut.testOtherSchedulerFiles("test_cases_v5/Other_Schedulers/test_6.json");
 
             System.out.println("\n========================================");
-            System.out.println("   All Tests Completed");
+            System.out.println(" All Tests Completed");
             System.out.println("========================================");
         } catch (Exception e) {
             System.err.println("Error loading tests: " + e.getMessage());

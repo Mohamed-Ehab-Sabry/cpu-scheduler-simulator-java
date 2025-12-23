@@ -50,8 +50,8 @@
           {"name": "P5", "waitingTime": 32, "turnaroundTime": 40},
           {"name": "P6", "waitingTime": 38, "turnaroundTime": 42}
         ],
-        "averageWaitingTime": 24.6,
-        "averageTurnaroundTime": 32.6
+        "averageWaitingTime": 24.5,
+        "averageTurnaroundTime": 32.5
       }
     }
   }

@@ -408,14 +408,11 @@ abstract class Schedule {
 class SJF_process extends Process {
     protected int remainingTime = 0;
     protected boolean started = false;
-    protected int total_waiting_time = 0;
-    protected int lastRunTime = -1;
 
     public SJF_process(String name, int arrival_time, int burst_time) {
         super(name, arrival_time, burst_time, 0); // ignore the priority -> make it 0
         this.remainingTime = burst_time;
         this.started = false;
-        this.total_waiting_time = 0;
     }
 
     // SETTERS & GETTERS
@@ -430,55 +427,19 @@ class SJF_process extends Process {
     public void setStarted(boolean started) {
         this.started = started;
     }
-
-    public int getTotal_waiting_time() {
-        return total_waiting_time;
-    }
-
-    public int executeOneUnit(int currentTime) {
-        if (!started) {
-            this.started = true;
-            time_in = currentTime;
-        }
-        remainingTime--;
-        ++currentTime;
-        return currentTime;
-    }
-
-    // call when a process waiting
-    public void updateWaitingTime(int currentTime) {
-        if (started && lastRunTime != -1 && remainingTime > 0)
-            this.waiting_time += (currentTime - lastRunTime);
-    }
-
-    // when a process finished
-    public void finish(int finishTime) {
-        this.time_out = finishTime;
-        this.turnaround_time = finishTime - arrival_time;
-        this.waiting_time = turnaround_time - burst_time;
-    }
 }
 
 class SJF_Schedule extends Schedule {
     private List<SJF_process> sjf_processes;
-    private PriorityQueue<SJF_process> readyQ;
-    private Map<String, SJF_process> processMap; // to map back to original processes
 
     public SJF_Schedule(List<Process> processes, int contextSwitchTime) {
         super(processes, contextSwitchTime);
         this.sjf_processes = new ArrayList<>();
-        this.processMap = new HashMap<>();
 
         for (Process p : processes) {
             SJF_process sjf = new SJF_process(p.get_name(), p.get_arrival_time(), p.get_burst_time());
             sjf_processes.add(sjf);
-            processMap.put(p.get_name(), sjf);
         }
-
-        this.readyQ = new PriorityQueue<>(
-                Comparator.comparing(SJF_process::get_RemainingTime)
-                        .thenComparingInt(p -> p.get_arrival_time())
-                        .thenComparing(p -> p.get_name()));
     }
 
     // MAIN FNC
@@ -487,60 +448,64 @@ class SJF_Schedule extends Schedule {
         int currentTime = 0;
         SJF_process currentRunning = null;
         int completed = 0;
-        // while all processes haven't completed yet:
-        // ✅ load ready processes it the current time -> all processes that has arrival
-        // time <= currentTime and not completed
-        // ✅ choose minimum remaining of them to run (let we call it p) -> if two have
-        // the same remaining time then compare with arrival time
-        // ✅ executionOrder.add(p.get_name())
-        // ✅ if p was running already, or it's the first process in the readyQ then
-        // currentTime will be the same
-        // ✅ else currentTime += context switch cs
-        // ✅ execute p for one time unit
-        // ✅ check if p is completed to calc turnaround time and other metrics if
-        // available
+
         while (completed < sjf_processes.size()) {
+            // Load ready processes - those that have arrived and have remaining time
+            List<SJF_process> ready = new ArrayList<>();
+            for (SJF_process p : sjf_processes) {
+                if (p.arrival_time <= currentTime && p.remainingTime > 0) {
+                    ready.add(p);
+                }
+            }
 
-            // load ready processes
-            for (SJF_process p : sjf_processes)
-                if (p.remainingTime > 0 && p.arrival_time <= currentTime)
-                    readyQ.offer(p);
-
-            // if no process is ready and all process not completed yet
-            if (readyQ.isEmpty() && completed < sjf_processes.size()) {
-                int nxt_arrival = Integer.MAX_VALUE;
-                for (SJF_process p : sjf_processes)
-                    if (p.remainingTime > 0)
-                        nxt_arrival = Math.min(nxt_arrival, p.get_arrival_time());
-                if (nxt_arrival != Integer.MAX_VALUE)
-                    currentTime = nxt_arrival;
+            // If no process is ready, jump to next arrival time
+            if (ready.isEmpty()) {
+                int nextArrival = Integer.MAX_VALUE;
+                for (SJF_process p : sjf_processes) {
+                    if (p.remainingTime > 0) {
+                        nextArrival = Math.min(nextArrival, p.arrival_time);
+                    }
+                }
+                if (nextArrival != Integer.MAX_VALUE) {
+                    currentTime = nextArrival;
+                }
                 continue;
             }
 
-            // choose the minimum remaining time
-            currentRunning = readyQ.poll();
+            // Choose process with minimum remaining time
+            SJF_process next = ready.stream()
+                    .min(Comparator.comparingInt(SJF_process::get_RemainingTime)
+                            .thenComparingInt(p -> p.get_arrival_time())
+                            .thenComparing(p -> p.get_name()))
+                    .get();
 
-            // add cs if only the last running process differ from the current
-            // add p to the exec order
-
-            if (!executionOrder.isEmpty()) {
-                String last = executionOrder.get(executionOrder.size() - 1);
-                if (!last.equals(currentRunning.get_name())) {
+            // log execution order only when process changes, and add context switch time if
+            // switching
+            if (currentRunning != next) {
+                executionOrder.add(next.get_name());
+                if (currentRunning != null) {
                     currentTime += contextSwitchTime;
-                    executionOrder.add(currentRunning.get_name());
                 }
-            } else
-                executionOrder.add(currentRunning.get_name());
-            // execute p for only one time unit
-            currentTime = currentRunning.executeOneUnit(currentTime);
-
-            if (currentRunning.remainingTime == 0) {
-                currentRunning.finish(currentTime);
-                ++completed;
             }
 
-        }
+            currentRunning = next;
 
+            // Execute for one time unit
+            if (!next.isStarted()) {
+                next.setStarted(true);
+                next.set_time_in(currentTime);
+            }
+            next.remainingTime--;
+            currentTime++;
+
+            // if process completes, record completion time and calculate metrics
+            if (next.remainingTime == 0) {
+                next.set_time_out(currentTime);
+                next.turnaround_time = currentTime - next.arrival_time;
+                next.waiting_time = next.turnaround_time - next.original_burst_time;
+                completed++;
+            }
+        }
     }
 
     @Override
